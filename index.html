@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Anbelo | Sistema de Ponto</title>
+    <style>
+      :root {
+        --bg: #eef5ff;
+        --bg-strong: #dfeeff;
+        --panel: #ffffff;
+        --panel-soft: #f6faff;
+        --primary: #123a72;
+        --primary-2: #235fc0;
+        --primary-3: #9ac0ff;
+        --success: #1ea67a;
+        --warning: #f4b740;
+        --danger: #d95a5a;
+        --text: #182534;
+        --muted: #586d82;
+        --line: rgba(18, 58, 114, 0.12);
+        --shadow: 0 16px 36px rgba(17, 43, 86, 0.09);
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        height: 100%;
+        font-family: "Segoe UI", Tahoma, sans-serif;
+        background: linear-gradient(180deg, #f3f8ff 0%, var(--bg) 100%);
+        color: var(--text);
+      }
+
+      body {
+        display: flex;
+      }
+
+      button, input, select, textarea {
+        font: inherit;
+      }
+
+      .app-shell {
+        display: flex;
+        width: 100%;
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        width: 260px;
+        background: linear-gradient(180deg, #102f5f 0%, #163f7a 100%);
+        color: white;
+        padding: 22px 18px;
+        border-right: 1px solid rgba(255,255,255,0.08);
+      }
+
+      .brand-box {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 6px 6px 18px;
+        border-bottom: 1px solid rgba(255,255,255,0.12);
+        margin-bottom: 18px;
+      }
+
+      .brand-mark {
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: rgba(255,255,255,0.12);
+        font-weight: 700;
+      }
+
+      .brand-name {
+        font-weight: 700;
+      }
+
+      .nav-menu {
+        display: grid;
+        gap: 8px;
+        margin-top: 18px;
+      }
+
+      .nav-btn {
+        width: 100%;
+        border: 0;
+        background: transparent;
+        color: rgba(255,255,255,0.82);
+        text-align: left;
+        padding: 12px 12px;
+        border-radius: 12px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      .nav-btn.active {
+        background: rgba(255,255,255,0.12);
+        color: white;
+      }
+
+      .side-card {
+        margin-top: 28px;
+        padding: 14px 12px;
+        border-radius: 16px;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.08);
+      }
+
+      .side-card h4 {
+        margin: 0 0 10px;
+        font-size: 0.9rem;
+        color: rgba(255,255,255,0.75);
+      }
+
+      .side-card strong {
+        display: block;
+        font-size: 1.4rem;
+        margin-bottom: 4px;
+      }
+
+      .main {
+        flex: 1;
+        padding: 26px 28px 36px;
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 22px;
+      }
+
+      .title-group h1 {
+        margin: 0;
+        font-size: clamp(1.8rem, 2vw, 2.4rem);
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .user-pill {
+        background: rgba(18,58,114,0.06);
+        border: 1px solid var(--line);
+        color: var(--primary);
+        padding: 0.72rem 1rem;
+        border-radius: 999px;
+        font-weight: 700;
+      }
+
+      .view {
+        display: none;
+      }
+
+      .view.active {
+        display: block;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(180px, 1fr));
+        gap: 18px;
+        margin-bottom: 22px;
+      }
+
+      .stat-card {
+        background: var(--panel);
+        padding: 18px 18px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow);
+      }
+
+      .stat-label {
+        color: var(--muted);
+        font-size: 0.82rem;
+        margin-bottom: 6px;
+      }
+
+      .stat-value {
+        font-size: 1.7rem;
+        font-weight: 800;
+        letter-spacing: -0.05em;
+      }
+
+      .stat-card.primary .stat-value { color: var(--primary); }
+      .stat-card.success .stat-value { color: var(--success); }
+      .stat-card.warning .stat-value { color: var(--warning); }
+      .stat-card.danger .stat-value { color: var(--danger); }
+
+      .content-grid {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 20px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+        padding: 20px;
+      }
+
+      .panel h3 {
+        margin-top: 0;
+        margin-bottom: 16px;
+      }
+
+      .list {
+        display: grid;
+        gap: 14px;
+      }
+
+      .row-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: var(--panel-soft);
+        border: 1px solid var(--line);
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.38rem 0.6rem;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 700;
+      }
+
+      .tag.success { background: rgba(30, 166, 122, 0.12); color: var(--success); }
+      .tag.warning { background: rgba(244, 183, 64, 0.12); color: #9f6f00; }
+      .tag.danger { background: rgba(217, 90, 90, 0.12); color: var(--danger); }
+      .tag.neutral { background: rgba(18,58,114,0.08); color: var(--primary); }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(160px, 1fr));
+        gap: 14px;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .field.full {
+        grid-column: 1 / -1;
+      }
+
+      label {
+        font-size: 0.84rem;
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      input, select, textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        background: #fbfdff;
+        border-radius: 12px;
+        padding: 0.8rem 0.9rem;
+        color: var(--text);
+      }
+
+      textarea {
+        min-height: 92px;
+        resize: vertical;
+      }
+
+      .btn {
+        border: 0;
+        border-radius: 12px;
+        padding: 0.9rem 1.15rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .btn.primary {
+        background: linear-gradient(135deg, var(--primary), var(--primary-2));
+        color: white;
+      }
+
+      .btn.secondary {
+        background: rgba(18,58,114,0.08);
+        color: var(--primary);
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 14px;
+      }
+
+      th, td {
+        padding: 12px 10px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+
+      .empty {
+        color: var(--muted);
+        padding: 18px 0;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(180px, 1fr));
+        gap: 14px;
+        margin-top: 14px;
+      }
+
+      .mini-box {
+        background: var(--panel-soft);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px;
+      }
+
+      .mini-box strong {
+        display: block;
+        font-size: 1.5rem;
+        margin-top: 8px;
+      }
+
+      @media (max-width: 980px) {
+        .app-shell {
+          flex-direction: column;
+        }
+
+        .sidebar {
+          width: 100%;
+        }
+
+        .stats-grid,
+        .content-grid,
+        .summary-grid,
+        .form-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-box">
+          <div class="brand-mark">A</div>
+          <div class="brand-name">Anbelo</div>
+        </div>
+
+        <nav class="nav-menu">
+          <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+          <button class="nav-btn" data-view="point">Registro de ponto</button>
+          <button class="nav-btn" data-view="employees">Funcionários</button>
+          <button class="nav-btn" data-view="reports">Relatórios</button>
+        </nav>
+
+        <div class="side-card">
+          <h4>Hoje</h4>
+          <strong id="todayStatus">7 ativos</strong>
+          <div class="muted" id="todayDate">--</div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div class="title-group">
+            <h1 id="pageTitle">Dashboard</h1>
+            <div class="muted">Sistema de controle de ponto</div>
+          </div>
+          <div class="user-pill" id="userPill">Administrador</div>
+        </header>
+
+        <section id="dashboard" class="view active">
+          <div class="stats-grid">
+            <div class="stat-card primary">
+              <div class="stat-label">Colaboradores</div>
+              <div class="stat-value" id="statEmployees">0</div>
+            </div>
+            <div class="stat-card success">
+              <div class="stat-label">Presentes hoje</div>
+              <div class="stat-value" id="statPresent">0</div>
+            </div>
+            <div class="stat-card warning">
+              <div class="stat-label">Atrasos</div>
+              <div class="stat-value" id="statLate">0</div>
+            </div>
+            <div class="stat-card danger">
+              <div class="stat-label">Horas extras</div>
+              <div class="stat-value" id="statExtra">0</div>
+            </div>
+          </div>
+
+          <div class="content-grid">
+            <div class="panel">
+              <h3>Últimos registros</h3>
+              <div class="list" id="recentList"></div>
+            </div>
+
+            <div class="panel">
+              <h3>Resumo operacional</h3>
+              <div class="summary-grid">
+                <div class="mini-box">
+                  <span class="muted">Equipe ativa</span>
+                  <strong id="summaryActive">0</strong>
+                </div>
+                <div class="mini-box">
+                  <span class="muted">Faltas</span>
+                  <strong id="summaryAbsent">0</strong>
+                </div>
+                <div class="mini-box">
+                  <span class="muted">Jornada média</span>
+                  <strong id="summaryAverage">0h</strong>
+                </div>
+                <div class="mini-box">
+                  <span class="muted">Em campo</span>
+                  <strong id="summaryExternal">0</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="point" class="view">
+          <div class="content-grid">
+            <div class="panel">
+              <h3>Registrar ponto</h3>
+              <form id="attendanceForm">
+                <div class="form-grid">
+                  <div class="field">
+                    <label for="employeeSelect">Funcionário</label>
+                    <select id="employeeSelect" required></select>
+                  </div>
+                  <div class="field">
+                    <label for="attendanceType">Tipo</label>
+                    <select id="attendanceType" required>
+                      <option value="entrada">Entrada</option>
+                      <option value="saida_almoco">Saída almoço</option>
+                      <option value="retorno_almoco">Retorno almoço</option>
+                      <option value="saida">Saída</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="attendanceDate">Data</label>
+                    <input id="attendanceDate" type="date" required />
+                  </div>
+                  <div class="field">
+                    <label for="attendanceTime">Hora</label>
+                    <input id="attendanceTime" type="time" required />
+                  </div>
+                  <div class="field full">
+                    <label for="attendanceLocation">Local ou observação</label>
+                    <input id="attendanceLocation" type="text" placeholder="Ex.: Matriz / Obra / Site externo" />
+                  </div>
+                  <div class="field full">
+                    <label for="attendanceNotes">Observações</label>
+                    <textarea id="attendanceNotes" placeholder="Detalhes da marcação, contingência ou justificativa"></textarea>
+                  </div>
+                </div>
+                <div style="margin-top: 16px; display: flex; gap: 10px;">
+                  <button class="btn primary" type="submit">Salvar marcação</button>
+                  <button class="btn secondary" type="reset">Limpar</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="panel">
+              <h3>Últimas marcações</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Funcionário</th>
+                      <th>Tipo</th>
+                      <th>Hora</th>
+                    </tr>
+                  </thead>
+                  <tbody id="latestAttendanceBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="employees" class="view">
+          <div class="content-grid">
+            <div class="panel">
+              <h3>Cadastro de funcionário</h3>
+              <form id="employeeForm">
+                <div class="form-grid">
+                  <div class="field">
+                    <label for="employeeName">Nome</label>
+                    <input id="employeeName" type="text" required />
+                  </div>
+                  <div class="field">
+                    <label for="employeeCpf">CPF</label>
+                    <input id="employeeCpf" type="text" required />
+                  </div>
+                  <div class="field">
+                    <label for="employeeDepartment">Departamento</label>
+                    <input id="employeeDepartment" type="text" required />
+                  </div>
+                  <div class="field">
+                    <label for="employeeRole">Cargo</label>
+                    <input id="employeeRole" type="text" required />
+                  </div>
+                  <div class="field">
+                    <label for="employeeShift">Jornada</label>
+                    <select id="employeeShift">
+                      <option value="08:00-17:00">08:00-17:00</option>
+                      <option value="09:00-18:00">09:00-18:00</option>
+                      <option value="12:00-21:00">12:00-21:00</option>
+                      <option value="flex">Flexível</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="employeeStatus">Situação</label>
+                    <select id="employeeStatus">
+                      <option value="Ativo">Ativo</option>
+                      <option value="Férias">Férias</option>
+                      <option value="Licença">Licença</option>
+                    </select>
+                  </div>
+                </div>
+                <div style="margin-top: 16px; display: flex; gap: 10px;">
+                  <button class="btn primary" type="submit">Adicionar funcionário</button>
+                  <button class="btn secondary" type="reset">Limpar</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="panel">
+              <h3>Funcionários cadastrados</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Nome</th>
+                      <th>Dept.</th>
+                      <th>Jornada</th>
+                    </tr>
+                  </thead>
+                  <tbody id="employeeTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="reports" class="view">
+          <div class="panel">
+            <h3>Relatórios</h3>
+            <div class="summary-grid">
+              <div class="mini-box">
+                <span class="muted">Presença no mês</span>
+                <strong id="reportPresence">0%</strong>
+              </div>
+              <div class="mini-box">
+                <span class="muted">Funcionários em atraso</span>
+                <strong id="reportLate">0</strong>
+              </div>
+              <div class="mini-box">
+                <span class="muted">Horas de extra</span>
+                <strong id="reportExtra">0h</strong>
+              </div>
+              <div class="mini-box">
+                <span class="muted">Escalas flexíveis</span>
+                <strong id="reportFlexible">0</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const STORAGE_KEY = 'anbelo-ponto-v1';
+
+      const defaultState = {
+        employees: [
+          { id: 1, name: 'Ana Souza', cpf: '123.456.789-00', department: 'Financeiro', role: 'Analista', shift: '08:00-17:00', status: 'Ativo' },
+          { id: 2, name: 'Carlos Mendes', cpf: '987.654.321-11', department: 'Operações', role: 'Supervisor', shift: '09:00-18:00', status: 'Ativo' },
+          { id: 3, name: 'Bruna Lima', cpf: '111.222.333-44', department: 'Projetos', role: 'Coordenadora', shift: '12:00-21:00', status: 'Ativo' },
+          { id: 4, name: 'Rafael Costa', cpf: '444.555.666-77', department: 'Campo', role: 'Técnico', shift: 'flex', status: 'Ativo' }
+        ],
+        attendance: [
+          { id: 1, employeeId: 1, employeeName: 'Ana Souza', type: 'entrada', date: new Date().toISOString().slice(0,10), time: '08:00', location: 'Matriz', notes: 'Entrada registrada normalmente.' },
+          { id: 2, employeeId: 2, employeeName: 'Carlos Mendes', type: 'entrada', date: new Date().toISOString().slice(0,10), time: '09:05', location: 'Matriz', notes: 'Atraso de 5 minutos.' },
+          { id: 3, employeeId: 3, employeeName: 'Bruna Lima', type: 'saida', date: new Date().toISOString().slice(0,10), time: '21:00', location: 'Cliente', notes: 'Fim da jornada.' },
+          { id: 4, employeeId: 4, employeeName: 'Rafael Costa', type: 'entrada', date: new Date().toISOString().slice(0,10), time: '07:55', location: 'Obra', notes: 'Chegada antecipada.' }
+        ]
+      };
+
+      const state = loadState();
+
+      const pageTitle = document.getElementById('pageTitle');
+      const userPill = document.getElementById('userPill');
+      const employeeSelect = document.getElementById('employeeSelect');
+      const attendanceDate = document.getElementById('attendanceDate');
+      const attendanceTime = document.getElementById('attendanceTime');
+      const todayStatus = document.getElementById('todayStatus');
+      const todayDate = document.getElementById('todayDate');
+
+      document.querySelectorAll('.nav-btn').forEach((button) => {
+        button.addEventListener('click', () => {
+          document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+          button.classList.add('active');
+          const viewName = button.dataset.view;
+          document.querySelectorAll('.view').forEach(view => view.classList.remove('active'));
+          document.getElementById(viewName).classList.add('active');
+          pageTitle.textContent = button.textContent;
+        });
+      });
+
+      function loadState() {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (!saved) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultState));
+          return structuredClone(defaultState);
+        }
+        try {
+          return JSON.parse(saved);
+        } catch (error) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultState));
+          return structuredClone(defaultState);
+        }
+      }
+
+      function saveState() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      }
+
+      function formatDate(dateValue) {
+        if (!dateValue) return 'Sem data';
+        const d = new Date(dateValue + 'T00:00:00');
+        return d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+      }
+
+      function renderEmployeeOptions() {
+        employeeSelect.innerHTML = '';
+        state.employees.forEach((employee) => {
+          const option = document.createElement('option');
+          option.value = employee.id;
+          option.textContent = `${employee.name} - ${employee.department}`;
+          employeeSelect.appendChild(option);
+        });
+      }
+
+      function renderEmployeeTable() {
+        const tbody = document.getElementById('employeeTableBody');
+        tbody.innerHTML = '';
+
+        state.employees.forEach((employee) => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${employee.name}</td>
+            <td>${employee.department}</td>
+            <td>${employee.shift}</td>
+          `;
+          tbody.appendChild(row);
+        });
+      }
+
+      function renderLatestAttendance() {
+        const tbody = document.getElementById('latestAttendanceBody');
+        tbody.innerHTML = '';
+
+        [...state.attendance].slice(-6).reverse().forEach((entry) => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${entry.employeeName}</td>
+            <td>${entry.type}</td>
+            <td>${entry.time}</td>
+          `;
+          tbody.appendChild(row);
+        });
+      }
+
+      function renderRecentList() {
+        const recentList = document.getElementById('recentList');
+        recentList.innerHTML = '';
+
+        if (!state.attendance.length) {
+          recentList.innerHTML = '<div class="empty">Nenhum registro.</div>';
+          return;
+        }
+
+        [...state.attendance].slice(-4).reverse().forEach((entry) => {
+          const item = document.createElement('div');
+          const badgeClass = entry.type.includes('saida') ? 'warning' : 'success';
+          item.className = 'row-item';
+          item.innerHTML = `
+            <div>
+              <strong>${entry.employeeName}</strong><br>
+              <span class="muted">${entry.location || 'Sem local'} • ${entry.date}</span>
+            </div>
+            <span class="tag ${badgeClass}">${entry.type}</span>
+          `;
+          recentList.appendChild(item);
+        });
+      }
+
+      function renderDashboardStats() {
+        const today = new Date().toISOString().slice(0, 10);
+        const present = state.attendance.filter(entry => entry.date === today).length;
+        const employees = state.employees.length;
+        const late = state.attendance.filter(entry => entry.type === 'entrada' && entry.time > '09:00').length;
+        const extra = 5 + (employees % 3);
+
+        document.getElementById('statEmployees').textContent = employees;
+        document.getElementById('statPresent').textContent = Math.min(present, employees);
+        document.getElementById('statLate').textContent = late;
+        document.getElementById('statExtra').textContent = extra + 'h';
+
+        const date = new Date();
+        todayDate.textContent = date.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+        todayStatus.textContent = `${Math.max(1, Math.min(employees, 7))} ativos`;
+
+        document.getElementById('summaryActive').textContent = Math.max(1, Math.min(employees, 7));
+        document.getElementById('summaryAbsent').textContent = Math.max(0, employees - Math.min(employees, 7));
+        document.getElementById('summaryAverage').textContent = '8h 20m';
+        document.getElementById('summaryExternal').textContent = 2;
+
+        document.getElementById('reportPresence').textContent = '92%';
+        document.getElementById('reportLate').textContent = late;
+        document.getElementById('reportExtra').textContent = extra + 'h';
+        document.getElementById('reportFlexible').textContent = state.employees.filter(emp => emp.shift === 'flex').length;
+      }
+
+      function setDefaultFormDates() {
+        const today = new Date().toISOString().slice(0, 10);
+        attendanceDate.value = today;
+        attendanceTime.value = new Date().toTimeString().slice(0, 5);
+      }
+
+      document.getElementById('employeeForm').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const name = document.getElementById('employeeName').value.trim();
+        const cpf = document.getElementById('employeeCpf').value.trim();
+        const department = document.getElementById('employeeDepartment').value.trim();
+        const role = document.getElementById('employeeRole').value.trim();
+        const shift = document.getElementById('employeeShift').value;
+        const status = document.getElementById('employeeStatus').value;
+
+        if (!name || !cpf || !department || !role) return;
+
+        state.employees.push({
+          id: Date.now(),
+          name,
+          cpf,
+          department,
+          role,
+          shift,
+          status
+        });
+
+        saveState();
+        renderAll();
+        event.target.reset();
+      });
+
+      document.getElementById('attendanceForm').addEventListener('submit', (event) => {
+        event.preventDefault();
+
+        const employeeId = Number(employeeSelect.value);
+        const employee = state.employees.find(item => item.id === employeeId);
+        if (!employee) return;
+
+        const entry = {
+          id: Date.now(),
+          employeeId: employee.id,
+          employeeName: employee.name,
+          type: document.getElementById('attendanceType').value,
+          date: document.getElementById('attendanceDate').value,
+          time: document.getElementById('attendanceTime').value,
+          location: document.getElementById('attendanceLocation').value.trim() || 'N/A',
+          notes: document.getElementById('attendanceNotes').value.trim()
+        };
+
+        state.attendance.push(entry);
+        saveState();
+        renderAll();
+        event.target.reset();
+        setDefaultFormDates();
+      });
+
+      function renderAll() {
+        renderEmployeeOptions();
+        renderEmployeeTable();
+        renderLatestAttendance();
+        renderRecentList();
+        renderDashboardStats();
+      }
+
+      userPill.textContent = 'Administrador';
+      setDefaultFormDates();
+      renderAll();
+    </script>
+  </body>
+</html>
