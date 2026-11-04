@@ -8,7 +8,7 @@ alter table public.attendance_records
 
 alter table public.attendance_records
   add constraint attendance_records_source_check
-  check (source in ('web', 'web_passkey', 'mobile', 'offline'));
+  check (source in ('web', 'web_passkey', 'web_face', 'mobile', 'offline'));
 
 alter table public.employees
   add column if not exists codigo_registro text;
@@ -102,6 +102,27 @@ create table if not exists public.passkey_challenges (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.employee_face_templates (
+  employee_id uuid primary key references public.employees(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  company_id uuid not null references public.companies(id) on delete cascade,
+  template_ciphertext text not null,
+  template_iv text not null,
+  template_auth_tag text not null,
+  key_version smallint not null default 1,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.face_auth_challenges (
+  id uuid primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  company_id uuid not null references public.companies(id) on delete cascade,
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
 alter table public.passkey_challenges
   add column if not exists used_at timestamptz;
 
@@ -110,8 +131,12 @@ create index if not exists passkey_challenges_user_id_idx
 
 alter table public.employee_passkeys enable row level security;
 alter table public.passkey_challenges enable row level security;
+alter table public.employee_face_templates enable row level security;
+alter table public.face_auth_challenges enable row level security;
 revoke all on public.employee_passkeys, public.passkey_challenges from public, anon, authenticated;
 grant all on public.employee_passkeys, public.passkey_challenges to service_role;
+revoke all on public.employee_face_templates, public.face_auth_challenges from public, anon, authenticated;
+grant all on public.employee_face_templates, public.face_auth_challenges to service_role;
 
 create or replace function public.app_current_company_id()
 returns uuid
@@ -546,6 +571,65 @@ $$;
 revoke all on function public.record_own_attendance_with_passkey(text, text, double precision, double precision, double precision, uuid) from public, anon;
 grant execute on function public.record_own_attendance_with_passkey(text, text, double precision, double precision, double precision, uuid) to authenticated;
 
+create or replace function public.record_own_attendance_with_face(
+  p_location text,
+  p_notes text,
+  p_latitude double precision,
+  p_longitude double precision,
+  p_accuracy double precision,
+  p_challenge_id uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  verified_challenge public.face_auth_challenges%rowtype;
+  new_record_id uuid;
+begin
+  if auth.uid() is null or (select public.app_current_role()) <> 'funcionario' then
+    raise exception 'Somente funcionário autenticado pode registrar o próprio ponto.';
+  end if;
+
+  select *
+  into verified_challenge
+  from public.face_auth_challenges
+  where id = p_challenge_id
+    and user_id = auth.uid()
+    and company_id = (select public.app_current_company_id())
+    and used_at is null
+    and expires_at > now()
+  for update;
+
+  if not found then
+    raise exception 'A verificação facial é inválida, expirou ou já foi usada.';
+  end if;
+
+  update public.face_auth_challenges
+  set used_at = now()
+  where id = verified_challenge.id;
+
+  new_record_id := public.record_own_attendance(
+    p_location,
+    p_notes,
+    p_latitude,
+    p_longitude,
+    p_accuracy
+  );
+
+  update public.attendance_records
+  set source = 'web_face'
+  where id = new_record_id
+    and recorded_by = auth.uid();
+
+  return new_record_id;
+end;
+$$;
+
+revoke all on function public.record_own_attendance_with_face(text, text, double precision, double precision, double precision, uuid) from public, anon;
+grant execute on function public.record_own_attendance_with_face(text, text, double precision, double precision, double precision, uuid) to authenticated;
+
 create or replace function public.link_employee_auth_account(
   p_employee_id uuid,
   p_email text
@@ -891,7 +975,13 @@ begin
 
     delete from public.passkey_challenges
     where user_id = employee_to_archive.user_id;
+
+    delete from public.face_auth_challenges
+    where user_id = employee_to_archive.user_id;
   end if;
+
+  delete from public.employee_face_templates
+  where employee_id = employee_to_archive.id;
 
   update public.employees
   set status = 'Inativo',

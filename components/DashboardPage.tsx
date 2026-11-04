@@ -1,8 +1,9 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
+import FaceCamera from '@/components/FaceCamera';
 import { supabase } from '@/lib/supabase';
 
 type Passkey = {
@@ -117,6 +118,8 @@ export default function DashboardPage() {
   const [companyId, setCompanyId] = useState('');
   const [passkeys, setPasskeys] = useState<Passkey[]>([]);
   const [passkeyStatusMessage, setPasskeyStatusMessage] = useState('');
+  const [faceEnrolledEmployeeIds, setFaceEnrolledEmployeeIds] = useState<Set<string>>(new Set());
+  const [faceEnrollmentEmployeeId, setFaceEnrollmentEmployeeId] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -207,6 +210,25 @@ export default function DashboardPage() {
       setUserRole(profile.role);
       setActiveView(profile.role === 'funcionario' ? 'point' : 'dashboard');
       setCompanyId(profile.company_id);
+
+      if (profile.role === 'admin' || profile.role === 'gestor') {
+        try {
+          const faceResponse = await fetch('/api/faces', {
+            headers: { Authorization: `Bearer ${data.session.access_token}` },
+          });
+          const faceResult = await faceResponse.json() as {
+            error?: string;
+            enrolledEmployeeIds?: string[];
+          };
+          if (faceResponse.ok && Array.isArray(faceResult.enrolledEmployeeIds)) {
+            setFaceEnrolledEmployeeIds(new Set(faceResult.enrolledEmployeeIds));
+          } else {
+            setErrorMessage(faceResult.error || 'Não foi possível consultar os cadastros faciais.');
+          }
+        } catch {
+          setErrorMessage('Não foi possível consultar os cadastros faciais.');
+        }
+      }
 
       if (profile.role === 'funcionario') {
         try {
@@ -1127,6 +1149,112 @@ export default function DashboardPage() {
     form.reset();
   };
 
+  const handleFaceEnrollmentCameraError = useCallback((cameraError: Error) => {
+    setFaceEnrollmentEmployeeId('');
+    setErrorMessage(cameraError.message);
+  }, []);
+
+  const handleFaceEnrollmentCaptureError = useCallback((captureError: unknown) => {
+    setErrorMessage(
+      captureError instanceof Error
+        ? captureError.message
+        : 'Não foi possível processar o rosto. Tente novamente.',
+    );
+  }, []);
+
+  const handleFaceEnrollmentCapture = async (descriptor: number[]) => {
+    const employee = employees.find((item) => item.id === faceEnrollmentEmployeeId);
+    if (!supabase || !employee) {
+      setErrorMessage('Selecione um funcionário ativo com conta vinculada.');
+      return;
+    }
+
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !sessionData.session) {
+      setErrorMessage(sessionError?.message || 'Sua sessão expirou. Entre novamente.');
+      setFaceEnrollmentEmployeeId('');
+      router.push('/login');
+      return;
+    }
+
+    setSaving(true);
+    setErrorMessage('');
+    try {
+      const response = await fetch('/api/faces/enroll', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ employeeId: employee.id, descriptor }),
+      });
+      const result = await response.json() as { error?: string; success?: boolean; warning?: string };
+      if (!response.ok || !result.success) {
+        setErrorMessage(result.error || 'Não foi possível salvar o cadastro facial.');
+        return;
+      }
+
+      setFaceEnrolledEmployeeIds((current) => {
+        const next = new Set(current);
+        next.add(employee.id);
+        return next;
+      });
+      setFaceEnrollmentEmployeeId('');
+      setMessage(`Cadastro facial de ${employee.name} salvo. Nenhuma foto foi enviada ou armazenada.`);
+      if (result.warning) setErrorMessage(result.warning);
+    } catch {
+      setErrorMessage('Não foi possível conectar ao servidor para salvar o cadastro facial.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveFaceTemplate = async (employee: Employee) => {
+    if (!window.confirm(`Remover o cadastro facial de ${employee.name}?`)) return;
+    if (!supabase) {
+      setErrorMessage('Supabase não está configurado.');
+      return;
+    }
+
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !sessionData.session) {
+      setErrorMessage(sessionError?.message || 'Sua sessão expirou. Entre novamente.');
+      router.push('/login');
+      return;
+    }
+
+    setSaving(true);
+    setErrorMessage('');
+    setMessage('');
+    try {
+      const response = await fetch('/api/faces', {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ employeeId: employee.id }),
+      });
+      const result = await response.json() as { error?: string; success?: boolean; warning?: string };
+      if (!response.ok || !result.success) {
+        setErrorMessage(result.error || 'Não foi possível remover o cadastro facial.');
+        return;
+      }
+
+      setFaceEnrolledEmployeeIds((current) => {
+        const next = new Set(current);
+        next.delete(employee.id);
+        return next;
+      });
+      setMessage(`Cadastro facial de ${employee.name} removido.`);
+      if (result.warning) setErrorMessage(result.warning);
+    } catch {
+      setErrorMessage('Não foi possível conectar ao servidor para remover o cadastro facial.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleArchiveEmployee = async (employee: Employee) => {
     if (!supabase) {
       setErrorMessage('Supabase não está configurado.');
@@ -1164,6 +1292,13 @@ export default function DashboardPage() {
           : item,
       ),
     );
+    if (!isArchived) {
+      setFaceEnrolledEmployeeIds((current) => {
+        const next = new Set(current);
+        next.delete(employee.id);
+        return next;
+      });
+    }
     setMessage(
       isArchived
         ? `${employee.name} foi restaurado. O acesso ao sistema foi reativado.`
@@ -1695,6 +1830,36 @@ export default function DashboardPage() {
                         </td>
                         <td>
                           <div className="employee-actions">
+                            {employee.status === 'Ativo' ? (
+                              <>
+                                <span className="subtle">
+                                  {faceEnrolledEmployeeIds.has(employee.id) ? 'Rosto cadastrado' : 'Sem rosto cadastrado'}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="btn secondary compact"
+                                  onClick={() => {
+                                    setFaceEnrollmentEmployeeId(employee.id);
+                                    setErrorMessage('');
+                                    setMessage('');
+                                  }}
+                                  disabled={saving || !employee.hasLogin}
+                                  title={!employee.hasLogin ? 'Vincule uma conta ao funcionário antes do cadastro facial.' : 'Cadastrar ou atualizar o rosto'}
+                                >
+                                  {faceEnrolledEmployeeIds.has(employee.id) ? 'Atualizar rosto' : 'Cadastrar rosto'}
+                                </button>
+                                {faceEnrolledEmployeeIds.has(employee.id) ? (
+                                  <button
+                                    type="button"
+                                    className="btn secondary compact"
+                                    onClick={() => void handleRemoveFaceTemplate(employee)}
+                                    disabled={saving}
+                                  >
+                                    Remover rosto
+                                  </button>
+                                ) : null}
+                              </>
+                            ) : null}
                             <button
                               type="button"
                               className="btn secondary compact"
@@ -1828,6 +1993,48 @@ export default function DashboardPage() {
                 </table>
               </div>
             </div>
+            {faceEnrollmentEmployeeId ? (
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="face-enrollment-title"
+                style={{
+                  position: 'fixed',
+                  inset: 0,
+                  zIndex: 1000,
+                  display: 'grid',
+                  placeItems: 'center',
+                  padding: 20,
+                  background: 'rgba(16, 24, 40, 0.62)',
+                }}
+              >
+                <div className="panel" style={{ width: '100%', maxWidth: 520, maxHeight: '90vh', overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                    <h3 id="face-enrollment-title" style={{ margin: 0 }}>
+                      Cadastrar rosto de {employees.find((employee) => employee.id === faceEnrollmentEmployeeId)?.name}
+                    </h3>
+                    <button
+                      type="button"
+                      className="btn secondary compact"
+                      onClick={() => setFaceEnrollmentEmployeeId('')}
+                      disabled={saving}
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                  <p className="subtle">
+                    Faça o cadastro somente após obter o consentimento escrito do funcionário. A imagem é processada neste aparelho; somente o modelo facial criptografado é enviado e armazenado.
+                  </p>
+                  <FaceCamera
+                    buttonText={saving ? 'Salvando...' : 'Salvar cadastro facial'}
+                    disabled={saving}
+                    onCameraError={handleFaceEnrollmentCameraError}
+                    onCapture={handleFaceEnrollmentCapture}
+                    onCaptureError={handleFaceEnrollmentCaptureError}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
 

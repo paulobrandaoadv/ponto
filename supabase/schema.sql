@@ -54,12 +54,33 @@ create table if not exists employees (
   created_at timestamptz not null default now()
 );
 
+create table if not exists employee_face_templates (
+  employee_id uuid primary key references employees(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  company_id uuid not null references companies(id) on delete cascade,
+  template_ciphertext text not null,
+  template_iv text not null,
+  template_auth_tag text not null,
+  key_version smallint not null default 1,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists face_auth_challenges (
+  id uuid primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  company_id uuid not null references companies(id) on delete cascade,
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists attendance_records (
   id uuid primary key default gen_random_uuid(),
   employee_id uuid not null references employees(id) on delete cascade,
   company_id uuid not null references companies(id) on delete cascade,
   establishment_id uuid references establishments(id),
-  source text not null check (source in ('web','web_passkey','mobile','offline')),
+  source text not null check (source in ('web','web_passkey','web_face','mobile','offline')),
   event_type text not null check (event_type in ('entrada','saida_almoco','retorno_almoco','saida')),
   recorded_at timestamptz not null,
   timezone text not null default 'UTC',
@@ -90,6 +111,8 @@ alter table profiles enable row level security;
 alter table establishments enable row level security;
 alter table departments enable row level security;
 alter table employees enable row level security;
+alter table employee_face_templates enable row level security;
+alter table face_auth_challenges enable row level security;
 alter table attendance_records enable row level security;
 alter table audit_logs enable row level security;
 

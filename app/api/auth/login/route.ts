@@ -23,6 +23,11 @@ const validName = (name: string) =>
   name.length <= 100 &&
   /^[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ\s'.-]*$/.test(name);
 
+const validRegistrationIdentity = (identity: string) =>
+  identity.length >= 1 &&
+  identity.length <= 60 &&
+  /^[A-Za-z0-9][A-Za-z0-9 .-]*$/.test(identity);
+
 function isRateLimited(request: NextRequest, name: string) {
   const ip = requestIp(request);
   const keys = [attemptKey(ip, name), `${ip}:all`];
@@ -57,21 +62,28 @@ export async function POST(request: NextRequest) {
   if (
     typeof body !== 'object' ||
     body === null ||
-    !('name' in body) ||
     !('password' in body) ||
-    typeof body.name !== 'string' ||
     typeof body.password !== 'string'
   ) {
     return NextResponse.json({ error: genericLoginError }, { status: 400 });
   }
 
-  const name = normalizedName(body.name);
+  const identityValue = 'identity' in body && typeof body.identity === 'string'
+    ? body.identity
+    : 'name' in body && typeof body.name === 'string'
+      ? body.name
+      : '';
+  const identity = normalizedName(identityValue);
   const password = body.password;
-  if (!validName(name) || password.length === 0 || password.length > 256) {
+  if (
+    (!validName(identity) && !validRegistrationIdentity(identity)) ||
+    password.length === 0 ||
+    password.length > 256
+  ) {
     return NextResponse.json({ error: genericLoginError }, { status: 400 });
   }
 
-  if (isRateLimited(request, name)) {
+  if (isRateLimited(request, identity)) {
     return NextResponse.json(
       { error: 'Muitas tentativas. Aguarde 15 minutos e tente novamente.' },
       { status: 429, headers: { 'Retry-After': String(attemptWindowMs / 1000) } },
@@ -98,18 +110,63 @@ export async function POST(request: NextRequest) {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data: profiles, error: profileError } = await admin
-    .from('profiles')
-    .select('id')
-    .eq('status', 'ativo')
-    .ilike('nome', name)
-    .limit(2);
+  const matchingUserIds = new Set<string>();
+  if (validName(identity)) {
+    const { data: profiles, error: profileError } = await admin
+      .from('profiles')
+      .select('id')
+      .eq('status', 'ativo')
+      .ilike('nome', identity)
+      .limit(2);
+    if (profileError) {
+      return NextResponse.json({ error: genericLoginError }, { status: 401 });
+    }
+    profiles?.forEach((profile) => matchingUserIds.add(profile.id));
+  }
 
-  if (profileError || !profiles || profiles.length !== 1) {
+  if (validRegistrationIdentity(identity)) {
+    const [matriculaResult, registrationResult] = await Promise.all([
+      admin
+        .from('employees')
+        .select('user_id')
+        .ilike('status', 'ativo')
+        .eq('matricula', identity)
+        .not('user_id', 'is', null)
+        .limit(2),
+      admin
+        .from('employees')
+        .select('user_id')
+        .ilike('status', 'ativo')
+        .eq('codigo_registro', identity)
+        .not('user_id', 'is', null)
+        .limit(2),
+    ]);
+    if (matriculaResult.error || registrationResult.error) {
+      return NextResponse.json({ error: genericLoginError }, { status: 401 });
+    }
+    matriculaResult.data?.forEach((employee) => {
+      if (employee.user_id) matchingUserIds.add(employee.user_id);
+    });
+    registrationResult.data?.forEach((employee) => {
+      if (employee.user_id) matchingUserIds.add(employee.user_id);
+    });
+  }
+
+  if (matchingUserIds.size !== 1) {
     return NextResponse.json({ error: genericLoginError }, { status: 401 });
   }
 
-  const { data: authUser, error: authUserError } = await admin.auth.admin.getUserById(profiles[0].id);
+  const userId = Array.from(matchingUserIds)[0];
+  const { data: activeProfile, error: activeProfileError } = await admin
+    .from('profiles')
+    .select('status')
+    .eq('id', userId)
+    .maybeSingle();
+  if (activeProfileError || activeProfile?.status !== 'ativo') {
+    return NextResponse.json({ error: genericLoginError }, { status: 401 });
+  }
+
+  const { data: authUser, error: authUserError } = await admin.auth.admin.getUserById(userId);
   const email = authUser.user?.email;
   if (authUserError || !email) {
     return NextResponse.json({ error: genericLoginError }, { status: 401 });
@@ -124,7 +181,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: genericLoginError }, { status: 401 });
   }
 
-  attempts.delete(attemptKey(requestIp(request), name));
+  attempts.delete(attemptKey(requestIp(request), identity));
 
   return NextResponse.json(
     {
