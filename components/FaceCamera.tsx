@@ -88,26 +88,53 @@ export default function FaceCamera({
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
-      <video
-        ref={videoRef}
-        muted
-        playsInline
-        aria-label="Visualização da câmera facial"
+      <div
         style={{
+          position: 'relative',
           width: '100%',
-          maxHeight: 360,
+          overflow: 'hidden',
           borderRadius: 16,
-          objectFit: 'cover',
           background: '#101828',
-          transform: 'scaleX(-1)',
+          lineHeight: 0,
         }}
-      />
+      >
+        <video
+          ref={videoRef}
+          muted
+          playsInline
+          aria-label="Visualização da câmera facial"
+          style={{
+            display: 'block',
+            width: '100%',
+            maxHeight: 360,
+            objectFit: 'cover',
+            transform: 'scaleX(-1)',
+          }}
+        />
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            width: 'auto',
+            height: '82%',
+            maxWidth: '80%',
+            aspectRatio: '0.78',
+            transform: 'translate(-50%, -50%)',
+            border: '2px solid rgba(255, 255, 255, 0.95)',
+            borderRadius: '50%',
+            boxShadow: '0 0 0 999px rgba(0, 0, 0, 0.38), 0 0 18px rgba(255, 255, 255, 0.25)',
+            pointerEvents: 'none',
+          }}
+        />
+      </div>
       <p className="subtle" style={{ margin: 0 }}>
         {!cameraReady
           ? 'Iniciando a câmera...'
           : !modelsReady
             ? 'Preparando o leitor facial...'
-            : 'Leitor pronto. Centralize um único rosto, com boa iluminação.'}
+            : 'Posicione o rosto dentro do oval e mantenha boa iluminação.'}
       </p>
       <button
         type="button"
