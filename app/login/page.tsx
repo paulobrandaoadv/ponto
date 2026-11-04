@@ -45,6 +45,7 @@ export default function LoginPage() {
   const [mode, setMode] = useState<LoginMode>('face');
   const [attempts, setAttempts] = useState(0);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleCameraError = useCallback((cameraError: Error) => {
@@ -84,6 +85,7 @@ export default function LoginPage() {
     }
 
     setError('');
+    setSuccessMessage('');
     let response: Response;
     let result: FaceAuthResult;
     try {
@@ -167,7 +169,26 @@ export default function LoginPage() {
       return;
     }
 
-    router.replace('/dashboard');
+    let signOutFailed = false;
+    try {
+      const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' });
+      if (signOutError) {
+        signOutFailed = true;
+        console.error('Attendance recorded, but local sign-out returned an error.', signOutError);
+      }
+    } catch (signOutError) {
+      signOutFailed = true;
+      console.error('Attendance recorded, but local sign-out failed.', signOutError);
+    }
+
+    setAttempts(0);
+    setError('');
+    setSuccessMessage(
+      signOutFailed
+        ? 'Ponto batido com sucesso. A sessão foi removida deste aparelho; avise o administrador se esta mensagem persistir.'
+        : 'Ponto batido com sucesso. A tela está pronta para a próxima marcação.',
+    );
+    setMode('face');
   };
 
   const handleManualSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -250,6 +271,22 @@ export default function LoginPage() {
 
         {mode === 'face' ? (
           <div>
+            {successMessage ? (
+              <p
+                role="status"
+                aria-live="polite"
+                style={{
+                  margin: '0 0 14px',
+                  padding: '0.85rem 1rem',
+                  borderRadius: 12,
+                  background: 'rgba(24, 128, 72, 0.1)',
+                  color: '#17643b',
+                  fontWeight: 700,
+                }}
+              >
+                {successMessage}
+              </p>
+            ) : null}
             <FaceCamera
               buttonText="Bater Ponto"
               onCameraError={handleCameraError}
@@ -283,6 +320,7 @@ export default function LoginPage() {
                 setAttempts(0);
                 setMode('face');
                 setError('');
+                setSuccessMessage('');
               }}>
                 Voltar à leitura facial
               </button>
