@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import FaceCamera from '@/components/FaceCamera';
 import { FaceRecognitionError } from '@/lib/face-recognition';
@@ -46,26 +46,6 @@ export default function LoginPage() {
   const [attempts, setAttempts] = useState(0);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    const redirectIfAuthenticated = async () => {
-      if (!supabase) {
-        setMode('manual');
-        setError('O Supabase ainda não está configurado. Verifique as variáveis do servidor.');
-        return;
-      }
-
-      const { data, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) {
-        setMode('manual');
-        setError(`Não foi possível verificar a sessão: ${sessionError.message}`);
-        return;
-      }
-      if (data.session) router.replace('/dashboard');
-    };
-
-    void redirectIfAuthenticated();
-  }, [router]);
 
   const handleCameraError = useCallback((cameraError: Error) => {
     setMode('manual');
