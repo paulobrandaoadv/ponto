@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isFaceDescriptor } from '@/lib/face-shared';
-import { encryptFaceTemplate } from '@/lib/face-template';
+import { encryptFaceTemplate, FaceTemplateKeyError } from '@/lib/face-template';
 import { getFaceManagerContext, isNextResponse, isRecord, isUuid } from '@/lib/face-server';
 
 export const runtime = 'nodejs';
@@ -65,8 +65,24 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Could not encrypt face template.', error);
+    if (error instanceof FaceTemplateKeyError && error.reason === 'missing') {
+      return NextResponse.json(
+        {
+          error: 'O deploy do site não recebeu FACE_TEMPLATE_ENCRYPTION_KEY. Adicione a variável em Settings → Environment Variables no Vercel, habilite Production e faça um novo deploy.',
+        },
+        { status: 503 },
+      );
+    }
+    if (error instanceof FaceTemplateKeyError && error.reason === 'invalid') {
+      return NextResponse.json(
+        {
+          error: 'O servidor recebeu FACE_TEMPLATE_ENCRYPTION_KEY, mas o formato é inválido. Use exatamente 64 caracteres hexadecimais, sem espaços ou texto adicional.',
+        },
+        { status: 503 },
+      );
+    }
     return NextResponse.json(
-      { error: 'A chave de criptografia facial não está configurada corretamente no servidor.' },
+      { error: 'O servidor encontrou uma falha interna ao criptografar o cadastro facial. Confira os logs da função /api/faces/enroll no Vercel.' },
       { status: 503 },
     );
   }

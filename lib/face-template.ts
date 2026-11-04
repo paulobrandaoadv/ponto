@@ -12,11 +12,27 @@ type FaceTemplateOwner = {
 const templateAad = ({ employeeId, userId, companyId }: FaceTemplateOwner) =>
   Buffer.from(`${employeeId}:${userId}:${companyId}`, 'utf8');
 
-function encryptionKey() {
-  const encoded = process.env.FACE_TEMPLATE_ENCRYPTION_KEY;
-  if (!encoded || !/^[0-9a-fA-F]{64}$/.test(encoded)) {
-    throw new Error('FACE_TEMPLATE_ENCRYPTION_KEY deve conter exatamente 64 caracteres hexadecimais.');
+export class FaceTemplateKeyError extends Error {
+  constructor(readonly reason: 'missing' | 'invalid') {
+    super(
+      reason === 'missing'
+        ? 'FACE_TEMPLATE_ENCRYPTION_KEY is missing from the server environment.'
+        : 'FACE_TEMPLATE_ENCRYPTION_KEY must be exactly 64 hexadecimal characters.',
+    );
+    this.name = 'FaceTemplateKeyError';
   }
+}
+
+function encryptionKey() {
+  let encoded = process.env.FACE_TEMPLATE_ENCRYPTION_KEY?.trim() || '';
+  if (
+    (encoded.startsWith('"') && encoded.endsWith('"')) ||
+    (encoded.startsWith("'") && encoded.endsWith("'"))
+  ) {
+    encoded = encoded.slice(1, -1).trim();
+  }
+  if (!encoded) throw new FaceTemplateKeyError('missing');
+  if (!/^[0-9a-fA-F]{64}$/.test(encoded)) throw new FaceTemplateKeyError('invalid');
   return Buffer.from(encoded, 'hex');
 }
 
