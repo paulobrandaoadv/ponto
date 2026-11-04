@@ -3,6 +3,13 @@ alter table public.attendance_records
   add column if not exists notes text,
   add column if not exists recorded_by uuid references auth.users(id);
 
+alter table public.attendance_records
+  drop constraint if exists attendance_records_source_check;
+
+alter table public.attendance_records
+  add constraint attendance_records_source_check
+  check (source in ('web', 'web_passkey', 'mobile', 'offline'));
+
 alter table public.employees
   add column if not exists codigo_registro text;
 
@@ -67,6 +74,44 @@ alter table public.employees
 
 create unique index if not exists employees_codigo_registro_key
   on public.employees (codigo_registro);
+
+create table if not exists public.employee_passkeys (
+  credential_id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  company_id uuid not null references public.companies(id) on delete cascade,
+  public_key text not null,
+  counter bigint not null default 0,
+  transports text[] not null default '{}',
+  device_type text not null,
+  backed_up boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists employee_passkeys_user_id_idx
+  on public.employee_passkeys (user_id);
+
+create table if not exists public.passkey_challenges (
+  id uuid primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  company_id uuid not null references public.companies(id) on delete cascade,
+  challenge text not null,
+  purpose text not null check (purpose in ('register', 'authenticate')),
+  expires_at timestamptz not null,
+  verified_at timestamptz,
+  used_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+alter table public.passkey_challenges
+  add column if not exists used_at timestamptz;
+
+create index if not exists passkey_challenges_user_id_idx
+  on public.passkey_challenges (user_id, purpose, expires_at);
+
+alter table public.employee_passkeys enable row level security;
+alter table public.passkey_challenges enable row level security;
+revoke all on public.employee_passkeys, public.passkey_challenges from public, anon, authenticated;
+grant all on public.employee_passkeys, public.passkey_challenges to service_role;
 
 create or replace function public.app_current_company_id()
 returns uuid
@@ -440,6 +485,67 @@ $$;
 revoke all on function public.record_own_attendance(text, text, double precision, double precision, double precision) from public, anon;
 grant execute on function public.record_own_attendance(text, text, double precision, double precision, double precision) to authenticated;
 
+create or replace function public.record_own_attendance_with_passkey(
+  p_location text,
+  p_notes text,
+  p_latitude double precision,
+  p_longitude double precision,
+  p_accuracy double precision,
+  p_challenge_id uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  verified_challenge public.passkey_challenges%rowtype;
+  new_record_id uuid;
+begin
+  if auth.uid() is null or (select public.app_current_role()) <> 'funcionario' then
+    raise exception 'Somente funcionário autenticado pode registrar o próprio ponto.';
+  end if;
+
+  select *
+  into verified_challenge
+  from public.passkey_challenges
+  where id = p_challenge_id
+    and user_id = auth.uid()
+    and company_id = (select public.app_current_company_id())
+    and purpose = 'authenticate'
+    and verified_at is not null
+    and used_at is null
+    and expires_at > now()
+  for update;
+
+  if not found then
+    raise exception 'A verificação do aparelho é inválida, expirou ou já foi usada.';
+  end if;
+
+  update public.passkey_challenges
+  set used_at = now()
+  where id = verified_challenge.id;
+
+  new_record_id := public.record_own_attendance(
+    p_location,
+    p_notes,
+    p_latitude,
+    p_longitude,
+    p_accuracy
+  );
+
+  update public.attendance_records
+  set source = 'web_passkey'
+  where id = new_record_id
+    and recorded_by = auth.uid();
+
+  return new_record_id;
+end;
+$$;
+
+revoke all on function public.record_own_attendance_with_passkey(text, text, double precision, double precision, double precision, uuid) from public, anon;
+grant execute on function public.record_own_attendance_with_passkey(text, text, double precision, double precision, double precision, uuid) to authenticated;
+
 create or replace function public.link_employee_auth_account(
   p_employee_id uuid,
   p_email text
@@ -779,6 +885,12 @@ begin
     update public.profiles
     set status = 'inativo'
     where id = employee_to_archive.user_id;
+
+    delete from public.employee_passkeys
+    where user_id = employee_to_archive.user_id;
+
+    delete from public.passkey_challenges
+    where user_id = employee_to_archive.user_id;
   end if;
 
   update public.employees

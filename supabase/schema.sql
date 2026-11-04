@@ -59,7 +59,7 @@ create table if not exists attendance_records (
   employee_id uuid not null references employees(id) on delete cascade,
   company_id uuid not null references companies(id) on delete cascade,
   establishment_id uuid references establishments(id),
-  source text not null check (source in ('web','mobile','offline')),
+  source text not null check (source in ('web','web_passkey','mobile','offline')),
   event_type text not null check (event_type in ('entrada','saida_almoco','retorno_almoco','saida')),
   recorded_at timestamptz not null,
   timezone text not null default 'UTC',

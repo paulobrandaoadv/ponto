@@ -2,7 +2,15 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import { supabase } from '@/lib/supabase';
+
+type Passkey = {
+  id: string;
+  deviceType: string;
+  backedUp: boolean;
+  createdAt: string;
+};
 
 type Employee = {
   id: string;
@@ -107,6 +115,8 @@ export default function DashboardPage() {
   const [userEmail, setUserEmail] = useState('');
   const [userRole, setUserRole] = useState('');
   const [companyId, setCompanyId] = useState('');
+  const [passkeys, setPasskeys] = useState<Passkey[]>([]);
+  const [passkeyStatusMessage, setPasskeyStatusMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -197,6 +207,27 @@ export default function DashboardPage() {
       setUserRole(profile.role);
       setActiveView(profile.role === 'funcionario' ? 'point' : 'dashboard');
       setCompanyId(profile.company_id);
+
+      if (profile.role === 'funcionario') {
+        try {
+          const passkeysResponse = await fetch('/api/passkeys', {
+            headers: { Authorization: `Bearer ${data.session.access_token}` },
+          });
+          const passkeysResult = await passkeysResponse.json();
+          if (passkeysResponse.ok) {
+            setPasskeys(passkeysResult.passkeys || []);
+            setPasskeyStatusMessage('');
+          } else {
+            setPasskeyStatusMessage(
+              `${passkeysResult.error || 'Não foi possível consultar a biometria.'} A marcação manual continua disponível.`,
+            );
+          }
+        } catch {
+          setPasskeyStatusMessage(
+            'Não foi possível consultar a biometria. A marcação manual continua disponível.',
+          );
+        }
+      }
 
       const [employeesResult, departmentsResult, attendanceResult] = await Promise.all([
         supabase
@@ -688,11 +719,120 @@ export default function DashboardPage() {
     setSaving(false);
   };
 
+  const handleRegisterPasskey = async () => {
+    if (!supabase) {
+      setErrorMessage('Supabase não está configurado.');
+      return;
+    }
+
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !sessionData.session) {
+      setErrorMessage(sessionError?.message || 'Sua sessão expirou. Entre novamente.');
+      router.push('/login');
+      return;
+    }
+
+    setSaving(true);
+    setMessage('');
+    setErrorMessage('');
+    try {
+      const optionsResponse = await fetch('/api/passkeys/register', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
+      });
+      const optionsResult = await optionsResponse.json();
+      if (!optionsResponse.ok) {
+        throw new Error(optionsResult.error || 'Não foi possível iniciar o cadastro.');
+      }
+
+      const credential = await startRegistration({ optionsJSON: optionsResult.options });
+      const verificationResponse = await fetch('/api/passkeys/register/verify', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          challengeId: optionsResult.challengeId,
+          response: credential,
+        }),
+      });
+      const verificationResult = await verificationResponse.json();
+      if (!verificationResponse.ok) {
+        throw new Error(verificationResult.error || 'Não foi possível salvar a passkey.');
+      }
+
+      setPasskeys((current) => [...current, verificationResult.passkey]);
+      setPasskeyStatusMessage('');
+      setMessage('Biometria/passkey cadastrada neste aparelho. A marcação com biometria já está disponível.');
+    } catch (error) {
+      const detail = error instanceof Error && error.name === 'NotAllowedError'
+        ? 'Cadastro cancelado ou não disponível neste aparelho.'
+        : error instanceof Error
+          ? error.message
+          : 'Não foi possível cadastrar a passkey.';
+      setErrorMessage(detail);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemovePasskey = async (passkey: Passkey) => {
+    if (!window.confirm('Remover esta passkey da sua conta? Você poderá cadastrá-la novamente depois.')) {
+      return;
+    }
+    if (!supabase) {
+      setErrorMessage('Supabase não está configurado.');
+      return;
+    }
+
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !sessionData.session) {
+      setErrorMessage(sessionError?.message || 'Sua sessão expirou. Entre novamente.');
+      router.push('/login');
+      return;
+    }
+
+    setSaving(true);
+    setMessage('');
+    setErrorMessage('');
+    try {
+      const response = await fetch('/api/passkeys', {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ credentialId: passkey.id }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setErrorMessage(result.error || 'Não foi possível remover a passkey.');
+        setSaving(false);
+        return;
+      }
+
+      setPasskeys((current) => current.filter((item) => item.id !== passkey.id));
+      setMessage('Passkey removida. A marcação manual continua disponível.');
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? `Não foi possível remover a passkey: ${error.message}` : 'Não foi possível remover a passkey.',
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleAttendanceSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
     const formData = new FormData(form);
     const employeeId = String(formData.get('employeeId') || '');
+    const submitter = event.nativeEvent instanceof SubmitEvent ? event.nativeEvent.submitter : null;
+    const attendanceMode = submitter instanceof HTMLButtonElement &&
+      submitter.name === 'attendanceMode'
+      ? submitter.value
+      : 'manual';
     const employee = isEmployee
       ? employees[0]
       : employees.find((item) => item.id === employeeId);
@@ -727,16 +867,77 @@ export default function DashboardPage() {
         return;
       }
 
-      const { data: recordId, error: punchError } = await supabase.rpc('record_own_attendance', {
-        p_location: location || null,
-        p_notes: notes || null,
-        p_latitude: locationSnapshot.latitude,
-        p_longitude: locationSnapshot.longitude,
-        p_accuracy: locationSnapshot.accuracy,
-      });
+      let recordId: string | null = null;
+      if (attendanceMode === 'biometric') {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !sessionData.session) {
+          setErrorMessage(sessionError?.message || 'Sua sessão expirou. Entre novamente.');
+          router.push('/login');
+          setSaving(false);
+          return;
+        }
 
-      if (punchError || !recordId) {
-        setErrorMessage(`Não foi possível registrar seu ponto: ${punchError?.message || 'registro não retornado'}`);
+        try {
+          const optionsResponse = await fetch('/api/passkeys/authenticate', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
+          });
+          const optionsResult = await optionsResponse.json();
+          if (!optionsResponse.ok) {
+            throw new Error(optionsResult.error || 'Não foi possível iniciar a verificação do aparelho.');
+          }
+
+          const assertion = await startAuthentication({ optionsJSON: optionsResult.options });
+          const verificationResponse = await fetch('/api/passkeys/authenticate/verify', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${sessionData.session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              challengeId: optionsResult.challengeId,
+              response: assertion,
+              latitude: locationSnapshot.latitude,
+              longitude: locationSnapshot.longitude,
+              accuracy: locationSnapshot.accuracy,
+              location,
+              notes,
+            }),
+          });
+          const verificationResult = await verificationResponse.json();
+          if (!verificationResponse.ok) {
+            throw new Error(verificationResult.error || 'A verificação do aparelho falhou.');
+          }
+          recordId = verificationResult.recordId;
+        } catch (error) {
+          const detail = error instanceof Error && error.name === 'NotAllowedError'
+            ? 'Verificação cancelada ou não disponível. Você pode tentar novamente ou usar a marcação manual.'
+            : error instanceof Error
+              ? `${error.message} Se necessário, use a marcação manual.`
+              : 'A verificação falhou. Você pode usar a marcação manual.';
+          setErrorMessage(detail);
+          setSaving(false);
+          return;
+        }
+      } else {
+        const { data: manualRecordId, error: punchError } = await supabase.rpc('record_own_attendance', {
+          p_location: location || null,
+          p_notes: notes || null,
+          p_latitude: locationSnapshot.latitude,
+          p_longitude: locationSnapshot.longitude,
+          p_accuracy: locationSnapshot.accuracy,
+        });
+
+        if (punchError || !manualRecordId) {
+          setErrorMessage(`Não foi possível registrar seu ponto: ${punchError?.message || 'registro não retornado'}`);
+          setSaving(false);
+          return;
+        }
+        recordId = manualRecordId;
+      }
+
+      if (!recordId) {
+        setErrorMessage('O servidor não retornou o identificador da marcação.');
         setSaving(false);
         return;
       }
@@ -760,7 +961,7 @@ export default function DashboardPage() {
         ...current,
       ]);
       setMessage(
-        `${displayEventType(nextEmployeeEvent)} registrada com localização GPS (precisão aproximada de ${Math.round(locationSnapshot.accuracy)} m) e enviada para revisão.`,
+        `${displayEventType(nextEmployeeEvent)} ${attendanceMode === 'biometric' ? 'registrada após verificação da passkey' : 'registrada manualmente'}, com localização GPS (precisão aproximada de ${Math.round(locationSnapshot.accuracy)} m), e enviada para revisão.`,
       );
       setSaving(false);
       form.reset();
@@ -1168,6 +1369,43 @@ export default function DashboardPage() {
                   <p>
                     O navegador solicitará sua localização apenas ao registrar o ponto. Não há rastreamento em segundo plano; sem permissão de GPS, a marcação não será enviada.
                   </p>
+                  <p>
+                    A biometria é confirmada pelo próprio aparelho (por exemplo, Face ID ou Windows Hello). O sistema não recebe nem armazena rosto, impressão digital ou imagem biométrica. O aparelho pode pedir seu PIN ou código de desbloqueio.
+                  </p>
+                </div>
+              ) : null}
+              {isEmployee ? (
+                <div className="passkey-settings">
+                  <strong>Biometria deste aparelho</strong>
+                  <p className="subtle">
+                    Cadastre uma passkey no dispositivo que você usa. Cada funcionário configura a própria chave; administradores não cadastram rostos pelo sistema.
+                  </p>
+                  {passkeyStatusMessage ? <p className="subtle" role="status">{passkeyStatusMessage}</p> : null}
+                  <button
+                    type="button"
+                    className="btn secondary compact"
+                    onClick={handleRegisterPasskey}
+                    disabled={saving || loading}
+                  >
+                    {saving ? 'Aguarde...' : passkeys.length ? 'Cadastrar outro aparelho' : 'Ativar neste aparelho'}
+                  </button>
+                  {passkeys.map((passkey) => (
+                    <div className="passkey-row" key={passkey.id}>
+                      <span>
+                        Aparelho {passkey.deviceType === 'multiDevice' ? 'sincronizado' : 'individual'}
+                        {' · '}
+                        {new Date(passkey.createdAt).toLocaleDateString('pt-BR')}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn secondary compact"
+                        onClick={() => handleRemovePasskey(passkey)}
+                        disabled={saving}
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
                 </div>
               ) : null}
               <form onSubmit={handleAttendanceSubmit}>
@@ -1228,19 +1466,46 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                <div style={{ marginTop: 16, display: 'flex', gap: 10 }}>
-                  <button
-                    type="submit"
-                    className="btn primary"
-                    disabled={saving || loading || employees.length === 0 || (isEmployee && !nextEmployeeEvent)}
-                  >
-                    {saving
-                      ? 'Salvando...'
-                      : isEmployee && nextEmployeeEvent
-                        ? `Registrar ${displayEventType(nextEmployeeEvent).toLowerCase()}`
-                        : 'Salvar marcação'}
-                  </button>
-                  {!isEmployee ? <button type="reset" className="btn secondary">Limpar</button> : null}
+                <div style={{ marginTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {isEmployee ? (
+                    <>
+                      <button
+                        type="submit"
+                        name="attendanceMode"
+                        value={passkeys.length ? 'biometric' : 'manual'}
+                        className="btn primary"
+                        disabled={saving || loading || employees.length === 0 || !nextEmployeeEvent}
+                      >
+                        {saving
+                          ? 'Registrando...'
+                          : nextEmployeeEvent
+                            ? `Registrar ${displayEventType(nextEmployeeEvent).toLowerCase()}${passkeys.length ? ' com biometria' : ''}`
+                            : 'Limite diário atingido'}
+                      </button>
+                      {passkeys.length ? (
+                        <button
+                          type="submit"
+                          name="attendanceMode"
+                          value="manual"
+                          className="btn secondary"
+                          disabled={saving || loading || employees.length === 0 || !nextEmployeeEvent}
+                        >
+                          Registrar manualmente
+                        </button>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="submit"
+                        className="btn primary"
+                        disabled={saving || loading || employees.length === 0}
+                      >
+                        {saving ? 'Salvando...' : 'Salvar marcação'}
+                      </button>
+                      <button type="reset" className="btn secondary">Limpar</button>
+                    </>
+                  )}
                 </div>
                 {!loading && employees.length === 0 ? (
                   <div className="empty">
