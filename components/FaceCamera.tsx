@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { extractFaceDescriptor } from '@/lib/face-recognition';
+import { extractFaceDescriptor, preloadFaceModels } from '@/lib/face-recognition';
 
 type FaceCameraProps = {
   buttonText: string;
@@ -19,12 +19,23 @@ export default function FaceCamera({
   onCaptureError,
 }: FaceCameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const onCaptureErrorRef = useRef(onCaptureError);
   const [cameraReady, setCameraReady] = useState(false);
+  const [modelsReady, setModelsReady] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  onCaptureErrorRef.current = onCaptureError;
 
   useEffect(() => {
     let active = true;
     let stream: MediaStream | null = null;
+
+    void preloadFaceModels()
+      .then(() => {
+        if (active) setModelsReady(true);
+      })
+      .catch((error: unknown) => {
+        if (active) onCaptureErrorRef.current(error);
+      });
 
     const startCamera = async () => {
       try {
@@ -62,7 +73,7 @@ export default function FaceCamera({
 
   const handleCapture = async () => {
     const video = videoRef.current;
-    if (!video || !cameraReady || capturing || disabled) return;
+    if (!video || !cameraReady || !modelsReady || capturing || disabled) return;
 
     setCapturing(true);
     try {
@@ -92,13 +103,17 @@ export default function FaceCamera({
         }}
       />
       <p className="subtle" style={{ margin: 0 }}>
-        {cameraReady ? 'Centralize um único rosto, com boa iluminação.' : 'Iniciando a câmera...'}
+        {!cameraReady
+          ? 'Iniciando a câmera...'
+          : !modelsReady
+            ? 'Preparando o leitor facial...'
+            : 'Leitor pronto. Centralize um único rosto, com boa iluminação.'}
       </p>
       <button
         type="button"
         className="btn primary"
         onClick={() => void handleCapture()}
-        disabled={!cameraReady || capturing || disabled}
+        disabled={!cameraReady || !modelsReady || capturing || disabled}
       >
         {capturing ? 'Lendo rosto...' : buttonText}
       </button>

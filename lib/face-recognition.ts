@@ -62,6 +62,24 @@ function getSessions() {
   return sessionsPromise;
 }
 
+export async function preloadFaceModels() {
+  const { detector, ort, recognizer } = await getSessions();
+  await detector.run({
+    [detector.inputNames[0]]: new ort.Tensor(
+      'float32',
+      new Float32Array(3 * MODEL_SIZE * MODEL_SIZE),
+      [1, 3, MODEL_SIZE, MODEL_SIZE],
+    ),
+  });
+  await recognizer.run({
+    [recognizer.inputNames[0]]: new ort.Tensor(
+      'float32',
+      new Float32Array(3 * 112 * 112),
+      [1, 3, 112, 112],
+    ),
+  });
+}
+
 function outputData(outputs: Record<string, { data: unknown }>, name: string) {
   const data = outputs[name]?.data;
   if (!(data instanceof Float32Array)) {
