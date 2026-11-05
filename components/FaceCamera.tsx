@@ -89,44 +89,18 @@ export default function FaceCamera({
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div
-        style={{
-          position: 'relative',
-          width: '100%',
-          overflow: 'hidden',
-          borderRadius: 16,
-          background: '#101828',
-          lineHeight: 0,
-        }}
+        className="face-camera-preview"
       >
         <video
           ref={videoRef}
           muted
           playsInline
           aria-label="Visualização da câmera facial"
-          style={{
-            display: 'block',
-            width: '100%',
-            maxHeight: 360,
-            objectFit: 'cover',
-            transform: 'scaleX(-1)',
-          }}
+          className="face-camera-video"
         />
         <div
           aria-hidden="true"
-          style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            width: 'auto',
-            height: '82%',
-            maxWidth: '80%',
-            aspectRatio: '0.78',
-            transform: 'translate(-50%, -50%)',
-            border: '2px solid rgba(255, 255, 255, 0.95)',
-            borderRadius: '50%',
-            boxShadow: '0 0 0 999px rgba(0, 0, 0, 0.38), 0 0 18px rgba(255, 255, 255, 0.25)',
-            pointerEvents: 'none',
-          }}
+          className="face-camera-oval"
         />
       </div>
       <p className="subtle" style={{ margin: 0 }}>
