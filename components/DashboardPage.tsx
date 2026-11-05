@@ -4,6 +4,17 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import FaceCamera from '@/components/FaceCamera';
+import {
+  ATTENDANCE_TIME_ZONE,
+  calculateMonthlyOvertime,
+  DEFAULT_WORK_SCHEDULE,
+  formatOvertimeMinutes,
+  isValidWorkSchedule,
+  parseWorkSchedule,
+  serializeWorkSchedule,
+  type OvertimePunch,
+  type WorkSchedule,
+} from '@/lib/attendance-overtime';
 import { supabase } from '@/lib/supabase';
 
 type Passkey = {
@@ -92,7 +103,69 @@ const displayEventType = (type: AttendanceEntry['type']) => ({
 }[type]);
 
 const normalizeShift = (shift: string | null) =>
-  shift?.toLowerCase() === 'flex' || shift?.toLowerCase() === 'flexível' ? 'Flexível' : shift || '';
+  shift?.toLowerCase() === 'flex' || shift?.toLowerCase() === 'flexível'
+    ? 'Flexível'
+    : shift || serializeWorkSchedule(DEFAULT_WORK_SCHEDULE);
+
+const displayShift = (shift: string) => {
+  const schedule = parseWorkSchedule(shift);
+  return schedule
+    ? `${schedule.start}–${schedule.lunchStart} / ${schedule.lunchEnd}–${schedule.end}`
+    : shift;
+};
+
+const zonedMonthBoundary = (year: number, month: number) => {
+  const targetUtc = Date.UTC(year, month - 1, 1);
+  let timestamp = targetUtc;
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ATTENDANCE_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const parts = formatter.formatToParts(new Date(timestamp));
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      Number(parts.find((item) => item.type === type)?.value);
+    const localAsUtc = Date.UTC(
+      part('year'),
+      part('month') - 1,
+      part('day'),
+      part('hour'),
+      part('minute'),
+      part('second'),
+    );
+    const correction = targetUtc - localAsUtc;
+    timestamp += correction;
+    if (correction === 0) break;
+  }
+
+  return new Date(timestamp).toISOString();
+};
+
+const attendanceMonthRange = (date: Date) => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ATTENDANCE_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  if (!year || !month) throw new Error('Não foi possível determinar o mês atual.');
+  const numericYear = Number(year);
+  const numericMonth = Number(month);
+  const nextMonthYear = numericMonth === 12 ? numericYear + 1 : numericYear;
+  const nextMonth = numericMonth === 12 ? 1 : numericMonth + 1;
+  return {
+    start: zonedMonthBoundary(numericYear, numericMonth),
+    end: zonedMonthBoundary(nextMonthYear, nextMonth),
+  };
+};
 
 const normalizeEmployeeStatus = (status: string) => {
   const normalized = status.toLowerCase();
@@ -112,6 +185,8 @@ export default function DashboardPage() {
   const router = useRouter();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
+  const [monthlyOvertimePunches, setMonthlyOvertimePunches] = useState<OvertimePunch[]>([]);
+  const [overtimeLoadError, setOvertimeLoadError] = useState('');
   const [activeView, setActiveView] = useState<'dashboard' | 'point' | 'employees' | 'approvals' | 'reports'>('dashboard');
   const [userEmail, setUserEmail] = useState('');
   const [userRole, setUserRole] = useState('');
@@ -142,6 +217,15 @@ export default function DashboardPage() {
   );
   const isManager = userRole === 'admin' || userRole === 'gestor';
   const isEmployee = userRole === 'funcionario';
+  const employeeOvertimeSchedule = useMemo(
+    () => parseWorkSchedule(employees[0]?.shift),
+    [employees],
+  );
+  const monthlyOvertime = useMemo(
+    () => calculateMonthlyOvertime(monthlyOvertimePunches, employeeOvertimeSchedule),
+    [monthlyOvertimePunches, employeeOvertimeSchedule],
+  );
+  const scheduleDefaults = parseWorkSchedule(editingEmployee?.shift) || DEFAULT_WORK_SCHEDULE;
   const nextEmployeeEvent = useMemo(() => {
     const todayEntries = attendance
       .filter((entry) => entry.date === localDate(new Date()) && entry.status !== 'rejected')
@@ -317,6 +401,41 @@ export default function DashboardPage() {
         status: normalizeEmployeeStatus(employee.status),
       }));
       const employeeNames = new Map(loadedEmployees.map((employee) => [employee.id, employee.name]));
+
+      setOvertimeLoadError('');
+      setMonthlyOvertimePunches([]);
+      if (profile.role === 'funcionario' && loadedEmployees[0]) {
+        let monthRange: { start: string; end: string };
+        try {
+          monthRange = attendanceMonthRange(new Date());
+        } catch (error) {
+          setOvertimeLoadError(
+            error instanceof Error ? error.message : 'Não foi possível determinar o período das horas extras.',
+          );
+          monthRange = { start: '', end: '' };
+        }
+
+        if (monthRange.start && monthRange.end) {
+          const { data: overtimeRecords, error: overtimeError } = await supabase
+            .from('attendance_records')
+            .select('event_type, recorded_at, status')
+            .eq('company_id', profile.company_id)
+            .eq('employee_id', loadedEmployees[0].id)
+            .gte('recorded_at', monthRange.start)
+            .lt('recorded_at', monthRange.end)
+            .order('recorded_at', { ascending: true });
+
+          if (overtimeError) {
+            setOvertimeLoadError(`Não foi possível carregar as horas extras: ${overtimeError.message}`);
+          } else {
+            setMonthlyOvertimePunches((overtimeRecords || []).map((record) => ({
+              type: record.event_type,
+              recordedAt: record.recorded_at,
+              status: record.status,
+            })));
+          }
+        }
+      }
 
       setEmployees(loadedEmployees);
       const attendanceById = new Map(
@@ -516,12 +635,23 @@ export default function DashboardPage() {
     const cpf = String(formData.get('cpf') || '').trim();
     const department = String(formData.get('department') || '').trim();
     const role = String(formData.get('role') || '').trim();
-    const shift = String(formData.get('shift') || '08:00-17:00');
+    const flexibleSchedule = formData.get('flexibleSchedule') === 'on';
+    const schedule: WorkSchedule = {
+      start: String(formData.get('workStart') || ''),
+      lunchStart: String(formData.get('lunchStart') || ''),
+      lunchEnd: String(formData.get('lunchEnd') || ''),
+      end: String(formData.get('workEnd') || ''),
+    };
+    const shift = flexibleSchedule ? 'Flexível' : serializeWorkSchedule(schedule);
     const status = String(formData.get('status') || 'Ativo');
     const accountEmail = String(formData.get('accountEmail') || '').trim();
     const accountPassword = String(formData.get('accountPassword') || '');
 
     if (!supabase || !companyId || !name || !cpf || !department || !role) return;
+    if (!flexibleSchedule && !isValidWorkSchedule(schedule)) {
+      setErrorMessage('Confira os horários: entrada, saída para almoço, retorno do almoço e saída devem estar em ordem.');
+      return;
+    }
     if (!editingEmployee && (!accountEmail || !accountPassword)) {
       setErrorMessage('Informe o e-mail e a senha inicial para criar o acesso do funcionário.');
       return;
@@ -981,6 +1111,14 @@ export default function DashboardPage() {
           accuracy: locationSnapshot.accuracy,
         },
         ...current,
+      ]);
+      setMonthlyOvertimePunches((current) => [
+        ...current,
+        {
+          type: nextEmployeeEvent,
+          recordedAt: now.toISOString(),
+          status: 'pending',
+        },
       ]);
       setMessage(
         `${displayEventType(nextEmployeeEvent)} ${attendanceMode === 'biometric' ? 'registrada após verificação da passkey' : 'registrada manualmente'}, com localização GPS (precisão aproximada de ${Math.round(locationSnapshot.accuracy)} m), e enviada para revisão.`,
@@ -1494,6 +1632,40 @@ export default function DashboardPage() {
 
         {activeView === 'point' && (
           <div className="content-grid">
+            {isEmployee ? (
+              <div className="panel">
+                <h3>Horas extras deste mês</h3>
+                <p className="subtle">
+                  {new Date().toLocaleDateString('pt-BR', {
+                    month: 'long',
+                    year: 'numeric',
+                    timeZone: ATTENDANCE_TIME_ZONE,
+                  })}
+                  {' · '}
+                  {employeeOvertimeSchedule
+                    ? `calculadas após a saída normal às ${employeeOvertimeSchedule.end}`
+                    : 'sua jornada está configurada como flexível'}
+                </p>
+                {overtimeLoadError ? (
+                  <p role="alert" style={{ color: '#a63232' }}>{overtimeLoadError}</p>
+                ) : employeeOvertimeSchedule ? (
+                  <div className="stats-grid">
+                    <div className="stat-card">
+                      <span className="subtle">Confirmadas</span>
+                      <strong>{formatOvertimeMinutes(monthlyOvertime.confirmedMinutes)}</strong>
+                    </div>
+                    <div className="stat-card">
+                      <span className="subtle">Aguardando aprovação</span>
+                      <strong>{formatOvertimeMinutes(monthlyOvertime.pendingMinutes)}</strong>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="subtle">
+                    Não há cálculo automático de horas extras para jornada flexível.
+                  </p>
+                )}
+              </div>
+            ) : null}
             <div className="panel">
               <h3>{isEmployee ? 'Registrar meu ponto' : 'Registrar ponto'}</h3>
               {isEmployee ? (
@@ -1719,14 +1891,37 @@ export default function DashboardPage() {
                     <input id="role" name="role" type="text" defaultValue={editingEmployee?.role || ''} required />
                   </div>
 
-                  <div className="field">
-                    <label htmlFor="shift">Jornada</label>
-                    <select id="shift" name="shift" defaultValue={editingEmployee?.shift || '08:00-17:00'}>
-                      <option value="08:00-17:00">08:00–17:00</option>
-                      <option value="09:00-18:00">09:00-18:00</option>
-                      <option value="12:00-21:00">12:00-21:00</option>
-                      <option value="Flexível">Flexível</option>
-                    </select>
+                  <div className="field full">
+                    <label>Jornada normal do funcionário</label>
+                    <p className="subtle" style={{ margin: '0 0 8px' }}>
+                      Configure os quatro horários. As horas extras são calculadas depois do horário normal de saída.
+                    </p>
+                    <div className="form-grid">
+                      <div className="field">
+                        <label htmlFor="workStart">Entrada</label>
+                        <input id="workStart" name="workStart" type="time" defaultValue={scheduleDefaults.start} />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="lunchStart">Saída para almoço</label>
+                        <input id="lunchStart" name="lunchStart" type="time" defaultValue={scheduleDefaults.lunchStart} />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="lunchEnd">Retorno do almoço</label>
+                        <input id="lunchEnd" name="lunchEnd" type="time" defaultValue={scheduleDefaults.lunchEnd} />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="workEnd">Saída normal</label>
+                        <input id="workEnd" name="workEnd" type="time" defaultValue={scheduleDefaults.end} />
+                      </div>
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                      <input
+                        type="checkbox"
+                        name="flexibleSchedule"
+                        defaultChecked={Boolean(editingEmployee && /flex/i.test(editingEmployee.shift))}
+                      />
+                      Jornada flexível (sem cálculo automático de horas extras)
+                    </label>
                   </div>
 
                     <div className="field">
@@ -1821,7 +2016,7 @@ export default function DashboardPage() {
                         <td>{employee.name}</td>
                         <td>{employee.department}</td>
                         <td>{employee.cpf}</td>
-                        <td>{employee.shift}</td>
+                        <td>{displayShift(employee.shift)}</td>
                         <td>{employee.status}</td>
                         <td>
                           {employee.status === 'Arquivado'

@@ -453,8 +453,8 @@ begin
   into last_event
   from public.attendance_records
   where employee_id = current_employee.id
-    and (recorded_at at time zone 'America/Sao_Paulo')::date =
-        (local_now at time zone 'America/Sao_Paulo')::date
+    and (recorded_at at time zone 'America/Campo_Grande')::date =
+        (local_now at time zone 'America/Campo_Grande')::date
     and status <> 'rejected'
   order by recorded_at desc
   limit 1;
@@ -492,7 +492,7 @@ begin
     'web',
     next_event,
     local_now,
-    'America/Sao_Paulo',
+    'America/Campo_Grande',
     'pending',
     nullif(trim(p_location), ''),
     nullif(trim(p_notes), ''),
