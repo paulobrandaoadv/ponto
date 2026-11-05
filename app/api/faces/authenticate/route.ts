@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
 
   const { data: employee, error: employeeError } = await admin
     .from('employees')
-    .select('id, name')
+    .select('id, nome')
     .eq('id', best.employeeId)
     .eq('user_id', best.userId)
     .eq('company_id', best.companyId)
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json(
-    { matched: true, employeeName: employee.name, tokenHash, challengeId },
+    { matched: true, employeeName: employee.nome, tokenHash, challengeId },
     { headers: { 'Cache-Control': 'no-store' } },
   );
 }
