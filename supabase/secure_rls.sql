@@ -1,3 +1,6 @@
+alter table public.employees
+  add column if not exists sabado_ate_meio_dia boolean not null default false;
+
 alter table public.attendance_records
   add column if not exists location text,
   add column if not exists notes text,
@@ -762,6 +765,7 @@ create or replace function public.create_employee_with_auth_account(
   p_department_name text,
   p_job_title text,
   p_shift text,
+  p_saturday_until_noon boolean,
   p_status text
 )
 returns uuid
@@ -792,6 +796,7 @@ begin
     or p_department_name is null
     or p_job_title is null
     or p_shift is null
+    or p_saturday_until_noon is null
     or p_status is null
     or target_email = ''
     or target_name = ''
@@ -851,6 +856,7 @@ begin
     departamento_id,
     cargo,
     jornada,
+    sabado_ate_meio_dia,
     situacao,
     status
   )
@@ -862,6 +868,7 @@ begin
     target_department_id,
     trim(p_job_title),
     trim(p_shift),
+    p_saturday_until_noon,
     lower(p_status),
     p_status
   )
@@ -889,8 +896,8 @@ begin
 end;
 $$;
 
-revoke all on function public.create_employee_with_auth_account(uuid, text, text, text, text, text, text, text) from public, anon;
-grant execute on function public.create_employee_with_auth_account(uuid, text, text, text, text, text, text, text) to authenticated;
+revoke all on function public.create_employee_with_auth_account(uuid, text, text, text, text, text, text, boolean, text) from public, anon;
+grant execute on function public.create_employee_with_auth_account(uuid, text, text, text, text, text, text, boolean, text) to authenticated;
 
 create or replace function public.sync_linked_employee_profile_name()
 returns trigger

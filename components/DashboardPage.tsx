@@ -33,6 +33,7 @@ type Employee = {
   department: string;
   role: string;
   shift: string;
+  saturdayUntilNoon: boolean;
   status: string;
 };
 
@@ -222,8 +223,12 @@ export default function DashboardPage() {
     [employees],
   );
   const monthlyOvertime = useMemo(
-    () => calculateMonthlyOvertime(monthlyOvertimePunches, employeeOvertimeSchedule),
-    [monthlyOvertimePunches, employeeOvertimeSchedule],
+    () => calculateMonthlyOvertime(
+      monthlyOvertimePunches,
+      employeeOvertimeSchedule,
+      employees[0]?.saturdayUntilNoon || false,
+    ),
+    [monthlyOvertimePunches, employeeOvertimeSchedule, employees],
   );
   const scheduleDefaults = parseWorkSchedule(editingEmployee?.shift) || DEFAULT_WORK_SCHEDULE;
   const nextEmployeeEvent = useMemo(() => {
@@ -338,7 +343,7 @@ export default function DashboardPage() {
       const [employeesResult, departmentsResult, attendanceResult] = await Promise.all([
         supabase
           .from('employees')
-          .select('id, codigo_registro, nome, cpf, user_id, departamento_id, cargo, jornada, status')
+          .select('id, codigo_registro, nome, cpf, user_id, departamento_id, cargo, jornada, sabado_ate_meio_dia, status')
           .eq('company_id', profile.company_id)
           .order('nome'),
         supabase
@@ -398,6 +403,7 @@ export default function DashboardPage() {
           : 'Sem departamento',
         role: employee.cargo || '',
         shift: normalizeShift(employee.jornada),
+        saturdayUntilNoon: Boolean(employee.sabado_ate_meio_dia),
         status: normalizeEmployeeStatus(employee.status),
       }));
       const employeeNames = new Map(loadedEmployees.map((employee) => [employee.id, employee.name]));
@@ -636,6 +642,7 @@ export default function DashboardPage() {
     const department = String(formData.get('department') || '').trim();
     const role = String(formData.get('role') || '').trim();
     const flexibleSchedule = formData.get('flexibleSchedule') === 'on';
+    const saturdayUntilNoon = formData.get('saturdayUntilNoon') === 'on';
     const schedule: WorkSchedule = {
       start: String(formData.get('workStart') || ''),
       lunchStart: String(formData.get('lunchStart') || ''),
@@ -722,6 +729,7 @@ export default function DashboardPage() {
             department,
             jobTitle: role,
             shift,
+            saturdayUntilNoon,
             status,
           }),
         });
@@ -750,6 +758,7 @@ export default function DashboardPage() {
           department,
           role,
           shift,
+          saturdayUntilNoon,
           status,
         },
       ]);
@@ -794,6 +803,7 @@ export default function DashboardPage() {
       departamento_id: departmentRecord.id,
       cargo: role,
       jornada: shift,
+      sabado_ate_meio_dia: saturdayUntilNoon,
       situacao: status === 'Arquivado' ? 'inativo' : status.toLowerCase(),
       status: status === 'Arquivado' ? 'Inativo' : status,
     };
@@ -827,6 +837,7 @@ export default function DashboardPage() {
       department,
       role,
       shift,
+      saturdayUntilNoon,
       status: normalizeEmployeeStatus(status),
     };
     setEmployees((current) =>
@@ -1579,6 +1590,9 @@ export default function DashboardPage() {
                 ? `calculadas após a saída normal às ${employeeOvertimeSchedule.end}`
                 : 'na jornada flexível, começam após 9 horas trabalhadas no dia, considerando o intervalo'}
             </p>
+            <p className="subtle">
+              Sábados e domingos contam como horas extras, exceto para quem está configurado para trabalhar sábado até 12h.
+            </p>
             {overtimeLoadError ? (
               <p role="alert" style={{ color: '#a63232' }}>{overtimeLoadError}</p>
             ) : employeeOvertimeSchedule ? (
@@ -1925,6 +1939,16 @@ export default function DashboardPage() {
                     </label>
                   </div>
 
+                  <label className="field full" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <input
+                      type="checkbox"
+                      name="saturdayUntilNoon"
+                      defaultChecked={editingEmployee?.saturdayUntilNoon || false}
+                      style={{ width: 18, height: 18 }}
+                    />
+                    Trabalha aos sábados até 12h (sábado até meio-dia é jornada normal)
+                  </label>
+
                     <div className="field">
                     <label htmlFor="status">Situação</label>
                       <select
@@ -2017,7 +2041,10 @@ export default function DashboardPage() {
                         <td>{employee.name}</td>
                         <td>{employee.department}</td>
                         <td>{employee.cpf}</td>
-                        <td>{displayShift(employee.shift)}</td>
+                        <td>
+                          {displayShift(employee.shift)}
+                          {employee.saturdayUntilNoon ? ' · Sáb até 12h' : ''}
+                        </td>
                         <td>{employee.status}</td>
                         <td>
                           {employee.status === 'Arquivado'

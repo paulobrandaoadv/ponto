@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
     !('department' in body) ||
     !('jobTitle' in body) ||
     !('shift' in body) ||
+    !('saturdayUntilNoon' in body) ||
     !('status' in body) ||
     typeof body.name !== 'string' ||
     typeof body.email !== 'string' ||
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest) {
     typeof body.department !== 'string' ||
     typeof body.jobTitle !== 'string' ||
     typeof body.shift !== 'string' ||
+    typeof body.saturdayUntilNoon !== 'boolean' ||
     typeof body.status !== 'string'
   ) {
     return NextResponse.json({ error: 'Preencha todos os dados do funcionário e da conta.' }, { status: 400 });
@@ -139,6 +141,7 @@ export async function POST(request: NextRequest) {
       p_department_name: department,
       p_job_title: jobTitle,
       p_shift: shift,
+      p_saturday_until_noon: body.saturdayUntilNoon,
       p_status: status,
     },
   );

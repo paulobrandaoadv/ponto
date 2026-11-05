@@ -101,6 +101,7 @@ function localDateAndMinutes(value: string) {
 export function calculateMonthlyOvertime(
   punches: OvertimePunch[],
   schedule: WorkSchedule | null,
+  saturdayUntilNoon = false,
 ): MonthlyOvertime {
   const expectedEnd = schedule ? timeToMinutes(schedule.end) : null;
   if (schedule && expectedEnd === null) return { confirmedMinutes: 0, pendingMinutes: 0 };
@@ -128,29 +129,61 @@ export function calculateMonthlyOvertime(
     punchesByDay.set(time.date, day);
   });
 
-  return Array.from(punchesByDay.values()).reduce<MonthlyOvertime>(
-    (total, day) => {
+  return Array.from(punchesByDay.entries()).reduce<MonthlyOvertime>(
+    (total, [date, day]) => {
       if (!day.exit) return total;
 
-      let normalEnd = expectedEnd;
-      if (normalEnd === null && day.entry !== undefined) {
-        const standardWorkMinutes =
-          (timeToMinutes(DEFAULT_WORK_SCHEDULE.lunchStart) || 0) -
-          (timeToMinutes(DEFAULT_WORK_SCHEDULE.start) || 0) +
-          (timeToMinutes(DEFAULT_WORK_SCHEDULE.end) || 0) -
-          (timeToMinutes(DEFAULT_WORK_SCHEDULE.lunchEnd) || 0);
-        const recordedBreakMinutes =
+      const dayOfWeek = new Date(`${date}T00:00:00Z`).getUTCDay();
+      const isSaturday = dayOfWeek === 6;
+      const isSunday = dayOfWeek === 0;
+      let minutes = 0;
+
+      if (isSunday || (isSaturday && !saturdayUntilNoon)) {
+        if (day.entry === undefined || day.exit.minutes <= day.entry) return total;
+        const recordedBreak =
           day.lunchStart !== undefined &&
           day.lunchEnd !== undefined &&
           day.lunchEnd > day.lunchStart
             ? day.lunchEnd - day.lunchStart
-            : (timeToMinutes(DEFAULT_WORK_SCHEDULE.lunchEnd) || 0) -
-              (timeToMinutes(DEFAULT_WORK_SCHEDULE.lunchStart) || 0);
-        normalEnd = day.entry + standardWorkMinutes + recordedBreakMinutes;
+            : 0;
+        minutes = Math.max(0, day.exit.minutes - day.entry - recordedBreak);
+      } else if (isSaturday && saturdayUntilNoon) {
+        const overtimeStart = 12 * 60;
+        if (day.exit.minutes <= overtimeStart) return total;
+        const overtimeWindow = day.exit.minutes - overtimeStart;
+        const recordedBreakOverlap =
+          day.lunchStart !== undefined &&
+          day.lunchEnd !== undefined &&
+          day.lunchEnd > day.lunchStart
+            ? Math.max(
+                0,
+                Math.min(day.exit.minutes, day.lunchEnd) -
+                  Math.max(overtimeStart, day.lunchStart),
+              )
+            : 0;
+        minutes = Math.max(0, overtimeWindow - recordedBreakOverlap);
+      } else {
+        let normalEnd = expectedEnd;
+        if (normalEnd === null && day.entry !== undefined) {
+          const standardWorkMinutes =
+            (timeToMinutes(DEFAULT_WORK_SCHEDULE.lunchStart) || 0) -
+            (timeToMinutes(DEFAULT_WORK_SCHEDULE.start) || 0) +
+            (timeToMinutes(DEFAULT_WORK_SCHEDULE.end) || 0) -
+            (timeToMinutes(DEFAULT_WORK_SCHEDULE.lunchEnd) || 0);
+          const recordedBreakMinutes =
+            day.lunchStart !== undefined &&
+            day.lunchEnd !== undefined &&
+            day.lunchEnd > day.lunchStart
+              ? day.lunchEnd - day.lunchStart
+              : (timeToMinutes(DEFAULT_WORK_SCHEDULE.lunchEnd) || 0) -
+                (timeToMinutes(DEFAULT_WORK_SCHEDULE.lunchStart) || 0);
+          normalEnd = day.entry + standardWorkMinutes + recordedBreakMinutes;
+        }
+
+        if (normalEnd === null) return total;
+        minutes = Math.max(0, day.exit.minutes - normalEnd);
       }
 
-      if (normalEnd === null) return total;
-      const minutes = Math.max(0, day.exit.minutes - normalEnd);
       if (day.exit.status === 'confirmed') total.confirmedMinutes += minutes;
       if (day.exit.status === 'pending') total.pendingMinutes += minutes;
       return total;

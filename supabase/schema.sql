@@ -47,6 +47,7 @@ create table if not exists employees (
   situacao text not null default 'ativo',
   data_admissao date,
   jornada text,
+  sabado_ate_meio_dia boolean not null default false,
   gestor_id uuid references auth.users(id),
   local_trabalho_id uuid references establishments(id),
   modalidade text,
