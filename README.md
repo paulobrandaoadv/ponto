@@ -87,6 +87,8 @@ Configure `SUPABASE_SERVICE_ROLE_KEY` em `.env.local` e no ambiente privado de p
 
 Ao cadastrar um funcionário em **Funcionários**, informe o e-mail e a senha inicial. O sistema cria a conta no Supabase Auth, cadastra o funcionário, cria o perfil `funcionario`, atribui um código de registro `ANB-000001` e vincula tudo automaticamente. O código é sequencial e único no sistema. O e-mail é necessário internamente para a conta Supabase; o funcionário entra usando o nome cadastrado e a senha. Entregue a senha inicial ao funcionário de forma privada.
 
+Administradores ativos podem cadastrar outros administradores pelo item **Administradores** no painel. Cada novo administrador recebe acesso completo somente à empresa do administrador que o cadastrou. Gestores não podem criar contas administrativas. A senha inicial deve ser entregue em particular; o novo administrador pode entrar com seu e-mail e senha.
+
 Cadastros antigos sem conta podem continuar usando **Vincular login** após criar sua conta em **Authentication → Users**. O funcionário verá apenas **Meu ponto**. A função `record_own_attendance` registra o horário do servidor, aplica a sequência diária de quatro marcações e não aceita horário enviado pelo navegador. Marcações rejeitadas aparecem no histórico, mas não avançam a sequência; o funcionário pode refazer aquela etapa.
 
 Se o funcionário esquecer a senha, um administrador ou gestor pode abrir **Funcionários → Redefinir senha**, definir uma senha temporária e entregá-la em particular. A alteração é registrada na auditoria; por segurança, a senha não é exibida novamente nem enviada por e-mail.

@@ -267,7 +267,7 @@ export default function LoginPage() {
                 ? 'Rosto validado. Estamos solicitando sua localização e registrando o ponto.'
                 : mode === 'punch-error'
                   ? 'Sua identidade foi validada, mas a marcação precisa ser concluída no sistema.'
-                  : 'Entre com seu nome, matrícula ou código de registro e senha.'}
+                  : 'Entre com seu e-mail, nome, matrícula ou código de registro e senha.'}
           </p>
         </div>
 
@@ -301,8 +301,8 @@ export default function LoginPage() {
           <form onSubmit={handleManualSubmit}>
             <div style={{ display: 'grid', gap: 14 }}>
               <div>
-                <label htmlFor="identity">Nome, matrícula ou código de registro</label>
-                <input id="identity" name="identity" type="text" autoComplete="username" placeholder="Seu nome ou código" required />
+                <label htmlFor="identity">E-mail, nome, matrícula ou código de registro</label>
+                <input id="identity" name="identity" type="text" autoComplete="username" placeholder="Seu e-mail, nome ou código" required />
               </div>
               <div>
                 <label htmlFor="password">Senha</label>

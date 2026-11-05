@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'nodejs';
 
-const genericLoginError = 'Nome ou senha inválidos.';
+const genericLoginError = 'Identificação ou senha inválidas.';
 const attemptWindowMs = 15 * 60 * 1000;
 const maxAttempts = 10;
 const attempts = new Map<string, { count: number; resetAt: number }>();
@@ -27,6 +27,10 @@ const validRegistrationIdentity = (identity: string) =>
   identity.length >= 1 &&
   identity.length <= 60 &&
   /^[A-Za-z0-9][A-Za-z0-9 .-]*$/.test(identity);
+
+const validEmail = (identity: string) =>
+  identity.length <= 254 &&
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identity);
 
 function isRateLimited(request: NextRequest, name: string) {
   const ip = requestIp(request);
@@ -76,7 +80,7 @@ export async function POST(request: NextRequest) {
   const identity = normalizedName(identityValue);
   const password = body.password;
   if (
-    (!validName(identity) && !validRegistrationIdentity(identity)) ||
+    (!validName(identity) && !validRegistrationIdentity(identity) && !validEmail(identity)) ||
     password.length === 0 ||
     password.length > 256
   ) {
@@ -111,6 +115,19 @@ export async function POST(request: NextRequest) {
   });
 
   const matchingUserIds = new Set<string>();
+  if (validEmail(identity)) {
+    const { data: profiles, error: profileError } = await admin
+      .from('profiles')
+      .select('id')
+      .eq('status', 'ativo')
+      .eq('email', identity.toLowerCase())
+      .limit(2);
+    if (profileError) {
+      return NextResponse.json({ error: genericLoginError }, { status: 401 });
+    }
+    profiles?.forEach((profile) => matchingUserIds.add(profile.id));
+  }
+
   if (validName(identity)) {
     const { data: profiles, error: profileError } = await admin
       .from('profiles')

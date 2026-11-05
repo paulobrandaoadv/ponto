@@ -181,7 +181,7 @@ export default function DashboardPage() {
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [monthlyOvertimePunches, setMonthlyOvertimePunches] = useState<OvertimePunch[]>([]);
   const [overtimeLoadError, setOvertimeLoadError] = useState('');
-  const [activeView, setActiveView] = useState<'dashboard' | 'point' | 'employees' | 'approvals' | 'reports'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'point' | 'employees' | 'administrators' | 'approvals' | 'reports'>('dashboard');
   const [userEmail, setUserEmail] = useState('');
   const [userRole, setUserRole] = useState('');
   const [companyId, setCompanyId] = useState('');
@@ -208,6 +208,7 @@ export default function DashboardPage() {
     [attendance],
   );
   const isManager = userRole === 'admin' || userRole === 'gestor';
+  const isAdmin = userRole === 'admin';
   const isEmployee = userRole === 'funcionario';
   const employeeOvertimeSchedule = useMemo(
     () => parseWorkSchedule(employees[0]?.shift),
@@ -621,6 +622,7 @@ export default function DashboardPage() {
       lunchEnd: String(formData.get('lunchEnd') || ''),
       end: String(formData.get('workEnd') || ''),
     };
+
     const shift = flexibleSchedule ? 'Flexível' : serializeWorkSchedule(schedule);
     const status = String(formData.get('status') || 'Ativo');
     const accountEmail = String(formData.get('accountEmail') || '').trim();
@@ -852,6 +854,62 @@ export default function DashboardPage() {
     );
     setMessage(status === 'confirmed' ? 'Marcação confirmada.' : 'Marcação rejeitada.');
     setSaving(false);
+  };
+
+  const handleAdministratorSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!supabase) {
+      setErrorMessage('O sistema de autenticação não está configurado.');
+      return;
+    }
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const name = String(formData.get('administratorName') || '').trim();
+    const email = String(formData.get('administratorEmail') || '').trim();
+    const password = String(formData.get('administratorPassword') || '');
+    if (!name || !email || !password) {
+      setErrorMessage('Preencha nome, e-mail e senha do novo administrador.');
+      return;
+    }
+
+    setSaving(true);
+    setMessage('');
+    setErrorMessage('');
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !sessionData.session) {
+      setErrorMessage('Sua sessão expirou. Entre novamente para cadastrar um administrador.');
+      setSaving(false);
+      return;
+    }
+
+    let response: Response;
+    let result: { error?: string; success?: boolean; name?: string; email?: string };
+    try {
+      response = await fetch('/api/administrators', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
+        body: JSON.stringify({ name, email, password }),
+      });
+      result = await response.json() as typeof result;
+    } catch {
+      setErrorMessage('Não foi possível conectar ao servidor para criar o administrador.');
+      setSaving(false);
+      return;
+    }
+
+    if (!response.ok || !result.success) {
+      setErrorMessage(result.error || 'Não foi possível criar o administrador.');
+      setSaving(false);
+      return;
+    }
+
+    setMessage(`Administrador ${result.name || name} cadastrado com acesso completo à empresa.`);
+    setSaving(false);
+    form.reset();
   };
 
   const handleAttendanceSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1397,6 +1455,14 @@ export default function DashboardPage() {
               >
                 Revisar marcações ({pendingAttendance.length})
               </button>
+              {isAdmin ? (
+                <button
+                  className={`nav-link ${activeView === 'administrators' ? 'active' : ''}`}
+                  onClick={() => setActiveView('administrators')}
+                >
+                  Administradores
+                </button>
+              ) : null}
               <button
                 className={`nav-link ${activeView === 'reports' ? 'active' : ''}`}
                 onClick={() => setActiveView('reports')}
@@ -1417,7 +1483,7 @@ export default function DashboardPage() {
       <main className="main-panel">
         <header className="topbar">
           <div>
-            <h1>{activeView === 'dashboard' ? 'Dashboard' : activeView === 'point' ? isEmployee ? 'Meu ponto' : 'Registro de ponto' : activeView === 'employees' ? 'Funcionários' : activeView === 'approvals' ? 'Revisar marcações' : 'Relatórios'}</h1>
+            <h1>{activeView === 'dashboard' ? 'Dashboard' : activeView === 'point' ? isEmployee ? 'Meu ponto' : 'Registro de ponto' : activeView === 'employees' ? 'Funcionários' : activeView === 'administrators' ? 'Administradores' : activeView === 'approvals' ? 'Revisar marcações' : 'Relatórios'}</h1>
             <div className="subtle">Sistema de controle de ponto</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -2132,6 +2198,61 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {isAdmin && activeView === 'administrators' && (
+          <div className="panel">
+            <h3>Cadastrar administrador</h3>
+            <p className="subtle">
+              O novo administrador terá acesso completo aos dados e às configurações da empresa vinculada à sua conta.
+              Informe uma senha inicial segura e entregue-a em particular.
+            </p>
+            <form onSubmit={handleAdministratorSubmit}>
+              <div className="form-grid">
+                <div className="field">
+                  <label htmlFor="administratorName">Nome completo</label>
+                  <input
+                    id="administratorName"
+                    name="administratorName"
+                    type="text"
+                    autoComplete="name"
+                    minLength={2}
+                    maxLength={100}
+                    required
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="administratorEmail">E-mail de acesso</label>
+                  <input
+                    id="administratorEmail"
+                    name="administratorEmail"
+                    type="email"
+                    autoComplete="email"
+                    maxLength={254}
+                    required
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="administratorPassword">Senha inicial</label>
+                  <input
+                    id="administratorPassword"
+                    name="administratorPassword"
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={8}
+                    maxLength={72}
+                    required
+                  />
+                  <span className="subtle">A senha deve ter entre 8 e 72 caracteres.</span>
+                </div>
+              </div>
+              <div style={{ marginTop: 16 }}>
+                <button type="submit" className="btn primary" disabled={saving || loading}>
+                  {saving ? 'Cadastrando...' : 'Cadastrar administrador'}
+                </button>
+              </div>
+            </form>
           </div>
         )}
 
