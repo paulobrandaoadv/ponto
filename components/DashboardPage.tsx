@@ -221,6 +221,8 @@ export default function DashboardPage() {
     ),
     [monthlyOvertimePunches, employeeOvertimeSchedule, employees],
   );
+  const totalMonthlyOvertimeMinutes =
+    monthlyOvertime.confirmedMinutes + monthlyOvertime.pendingMinutes;
   const scheduleDefaults = parseWorkSchedule(editingEmployee?.shift) || DEFAULT_WORK_SCHEDULE;
   const nextEmployeeEvent = useMemo(() => {
     const todayEntries = attendance
@@ -1437,39 +1439,23 @@ export default function DashboardPage() {
         {loading ? <div className="panel" role="status">Carregando dados do Supabase...</div> : null}
 
         {isEmployee ? (
-          <div className="panel" style={{ marginBottom: 18 }}>
-            <h3>Horas extras deste mês</h3>
-            <p className="subtle">
-              {new Date().toLocaleDateString('pt-BR', {
-                month: 'long',
-                year: 'numeric',
-                timeZone: ATTENDANCE_TIME_ZONE,
-              })}
-              {' · '}
-              {employeeOvertimeSchedule
-                ? `calculadas após a saída normal às ${employeeOvertimeSchedule.end}`
-                : 'na jornada flexível, começam após 9 horas trabalhadas no dia, considerando o intervalo'}
-            </p>
-            <p className="subtle">
-              Sábados e domingos contam como horas extras, exceto para quem está configurado para trabalhar sábado até 12h.
-            </p>
+          <div className="panel employee-overtime-panel">
+            <div className="employee-overtime-heading">
+              <h3>Total de horas extras</h3>
+              <span>
+                {new Date().toLocaleDateString('pt-BR', {
+                  month: 'long',
+                  year: 'numeric',
+                  timeZone: ATTENDANCE_TIME_ZONE,
+                })}
+              </span>
+            </div>
             {overtimeLoadError ? (
-              <p role="alert" style={{ color: '#a63232' }}>{overtimeLoadError}</p>
-            ) : employeeOvertimeSchedule ? (
-              <div className="stats-grid">
-                <div className="stat-card">
-                  <span className="subtle">Confirmadas</span>
-                  <strong>{formatOvertimeMinutes(monthlyOvertime.confirmedMinutes)}</strong>
-                </div>
-                <div className="stat-card">
-                  <span className="subtle">Aguardando aprovação</span>
-                  <strong>{formatOvertimeMinutes(monthlyOvertime.pendingMinutes)}</strong>
-                </div>
-              </div>
+              <p role="alert" className="employee-overtime-error">{overtimeLoadError}</p>
             ) : (
-              <p className="subtle">
-                Na jornada flexível, o cálculo considera 9 horas trabalhadas, descontando o intervalo de almoço registrado (ou 1h30 se as marcações de almoço estiverem ausentes).
-              </p>
+              <strong className="employee-overtime-total">
+                {loading ? 'Carregando...' : formatOvertimeMinutes(totalMonthlyOvertimeMinutes)}
+              </strong>
             )}
           </div>
         ) : null}
@@ -1542,7 +1528,7 @@ export default function DashboardPage() {
         {activeView === 'point' && (
           <div className="content-grid attendance-management-grid">
             <div className="panel">
-              <h3>{isEmployee ? 'Registrar meu ponto' : 'Registrar ponto'}</h3>
+              {!isEmployee ? <h3>Registrar ponto</h3> : null}
               {isEmployee ? (
                 <div className="subtle">
                   <p>

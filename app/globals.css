@@ -229,6 +229,39 @@ main {
   margin-bottom: 16px;
 }
 
+.employee-overtime-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+  border-left: 5px solid var(--accent);
+}
+
+.employee-overtime-heading h3 {
+  margin: 0 0 5px;
+  color: var(--primary);
+}
+
+.employee-overtime-heading span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-transform: capitalize;
+}
+
+.employee-overtime-total {
+  color: var(--primary);
+  font-size: clamp(1.7rem, 3vw, 2.4rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+}
+
+.employee-overtime-error {
+  margin: 0;
+  color: #a63232;
+}
+
 .list {
   display: grid;
   gap: 12px;
@@ -630,6 +663,12 @@ th {
   .panel {
     padding: 16px;
     border-radius: 16px;
+  }
+
+  .employee-overtime-panel {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
   }
 
   .row-item {
