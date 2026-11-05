@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import FaceCamera from '@/components/FaceCamera';
 import {
@@ -1359,7 +1360,9 @@ export default function DashboardPage() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand-box">
-          <div className="brand-mark">A</div>
+          <div className="brand-mark">
+            <Image src="/anbelo-logo.png" alt="Logo Anbelo" width={34} height={36} priority />
+          </div>
           <div className="brand-name">Anbelo</div>
         </div>
 

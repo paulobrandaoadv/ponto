@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useState } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import FaceCamera from '@/components/FaceCamera';
 import { FaceRecognitionError } from '@/lib/face-recognition';
@@ -252,14 +253,14 @@ export default function LoginPage() {
   };
 
   return (
-    <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#edf4fd', padding: 20 }}>
-      <section key={mode} className="login-panel" style={{ width: '100%', maxWidth: 430, background: '#fff', border: '1px solid rgba(18,58,114,0.12)', borderRadius: 20, padding: 28, boxShadow: '0 16px 36px rgba(18,58,114,0.09)' }}>
-        <div style={{ marginBottom: 18 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: '#123a72', color: 'white', display: 'grid', placeItems: 'center', fontWeight: 700, marginBottom: 12 }}>A</div>
-          <h1 style={{ margin: 0, marginBottom: 8 }}>
+    <main className="login-page">
+      <section key={mode} className="login-panel">
+        <div className="login-heading">
+          <Image className="login-logo" src="/anbelo-logo.png" alt="Logo Anbelo" width={48} height={52} priority />
+          <h1>
             {mode === 'face' ? 'Bater o Ponto pela Facial' : mode === 'processing' ? 'Validando marcação' : mode === 'punch-error' ? 'Marcação não concluída' : 'Acessar sistema'}
           </h1>
-          <p style={{ margin: 0, color: '#5c6f85' }}>
+          <p className="login-description">
             {mode === 'face'
               ? 'Centralize seu rosto e toque em Bater Ponto. Você terá até três tentativas.'
               : mode === 'processing'
@@ -276,14 +277,7 @@ export default function LoginPage() {
               <p
                 role="status"
                 aria-live="polite"
-                style={{
-                  margin: '0 0 14px',
-                  padding: '0.85rem 1rem',
-                  borderRadius: 12,
-                  background: 'rgba(24, 128, 72, 0.1)',
-                  color: '#17643b',
-                  fontWeight: 700,
-                }}
+                className="login-success"
               >
                 {successMessage}
               </p>
@@ -307,12 +301,12 @@ export default function LoginPage() {
           <form onSubmit={handleManualSubmit}>
             <div style={{ display: 'grid', gap: 14 }}>
               <div>
-                <label htmlFor="identity" style={{ display: 'block', marginBottom: 8, color: '#5c6f85', fontWeight: 600 }}>Nome, matrícula ou código de registro</label>
-                <input id="identity" name="identity" type="text" autoComplete="username" placeholder="Seu nome ou código" required style={{ width: '100%', padding: '0.8rem 0.9rem', borderRadius: 12, border: '1px solid rgba(18,58,114,0.12)' }} />
+                <label htmlFor="identity">Nome, matrícula ou código de registro</label>
+                <input id="identity" name="identity" type="text" autoComplete="username" placeholder="Seu nome ou código" required />
               </div>
               <div>
-                <label htmlFor="password" style={{ display: 'block', marginBottom: 8, color: '#5c6f85', fontWeight: 600 }}>Senha</label>
-                <input id="password" name="password" type="password" autoComplete="current-password" placeholder="Sua senha" required style={{ width: '100%', padding: '0.8rem 0.9rem', borderRadius: 12, border: '1px solid rgba(18,58,114,0.12)' }} />
+                <label htmlFor="password">Senha</label>
+                <input id="password" name="password" type="password" autoComplete="current-password" placeholder="Sua senha" required />
               </div>
               <button type="submit" disabled={loading} className="btn primary">
                 {loading ? 'Entrando...' : 'Entrar'}
@@ -330,7 +324,7 @@ export default function LoginPage() {
         ) : null}
 
         {mode === 'processing' ? (
-          <div role="status" aria-live="polite" style={{ color: '#5c6f85' }}>Aguarde enquanto o ponto é registrado...</div>
+          <div role="status" aria-live="polite" className="login-processing">Aguarde enquanto o ponto é registrado...</div>
         ) : null}
 
         {mode === 'punch-error' ? (
