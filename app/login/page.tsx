@@ -11,6 +11,7 @@ type LoginMode = 'face' | 'manual' | 'processing' | 'punch-error';
 type FaceAuthResult = {
   error?: string;
   matched?: boolean;
+  employeeName?: string;
   tokenHash?: string;
   challengeId?: string;
 };
@@ -109,7 +110,7 @@ export default function LoginPage() {
       handleFaceFailure('Rosto não reconhecido. Confira a iluminação e tente novamente.');
       return;
     }
-    if (!result.tokenHash || !result.challengeId) {
+    if (!result.employeeName || !result.tokenHash || !result.challengeId) {
       setMode('manual');
       setError('O servidor não concluiu a validação facial. Use o login manual.');
       return;
@@ -185,8 +186,8 @@ export default function LoginPage() {
     setError('');
     setSuccessMessage(
       signOutFailed
-        ? 'Ponto batido com sucesso. A sessão foi removida deste aparelho; avise o administrador se esta mensagem persistir.'
-        : 'Ponto batido com sucesso. A tela está pronta para a próxima marcação.',
+        ? `Ponto batido com sucesso. ${result.employeeName}. A sessão foi removida deste aparelho; avise o administrador se esta mensagem persistir.`
+        : `Ponto batido com sucesso. ${result.employeeName}`,
     );
     setMode('face');
   };
@@ -256,7 +257,7 @@ export default function LoginPage() {
         <div style={{ marginBottom: 18 }}>
           <div style={{ width: 48, height: 48, borderRadius: 14, background: '#123a72', color: 'white', display: 'grid', placeItems: 'center', fontWeight: 700, marginBottom: 12 }}>A</div>
           <h1 style={{ margin: 0, marginBottom: 8 }}>
-            {mode === 'face' ? 'Bater ponto pelo rosto' : mode === 'processing' ? 'Validando marcação' : mode === 'punch-error' ? 'Marcação não concluída' : 'Acessar sistema'}
+            {mode === 'face' ? 'Bater o Ponto pela Facial' : mode === 'processing' ? 'Validando marcação' : mode === 'punch-error' ? 'Marcação não concluída' : 'Acessar sistema'}
           </h1>
           <p style={{ margin: 0, color: '#5c6f85' }}>
             {mode === 'face'
