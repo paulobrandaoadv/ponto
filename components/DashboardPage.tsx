@@ -1689,7 +1689,7 @@ export default function DashboardPage() {
         )}
 
         {isManager && activeView === 'employees' && (
-          <div className="content-grid">
+          <div className="content-grid employee-management-grid">
             <div className="panel">
               <h3>{editingEmployee ? `Editar funcionário: ${editingEmployee.name}` : 'Cadastro de funcionário'}</h3>
               <form key={editingEmployee?.id || 'new-employee'} onSubmit={handleEmployeeSubmit}>

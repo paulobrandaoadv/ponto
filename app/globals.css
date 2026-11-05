@@ -189,6 +189,10 @@ main {
   min-width: 0;
 }
 
+.employee-management-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .panel {
   min-width: 0;
   background: var(--panel);
