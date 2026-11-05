@@ -102,26 +102,57 @@ export function calculateMonthlyOvertime(
   punches: OvertimePunch[],
   schedule: WorkSchedule | null,
 ): MonthlyOvertime {
-  if (!schedule) return { confirmedMinutes: 0, pendingMinutes: 0 };
-  const expectedEnd = timeToMinutes(schedule.end);
-  if (expectedEnd === null) return { confirmedMinutes: 0, pendingMinutes: 0 };
+  const expectedEnd = schedule ? timeToMinutes(schedule.end) : null;
+  if (schedule && expectedEnd === null) return { confirmedMinutes: 0, pendingMinutes: 0 };
 
-  const lastExitByDay = new Map<string, { minutes: number; status: string }>();
+  const punchesByDay = new Map<string, {
+    entry?: number;
+    lunchStart?: number;
+    lunchEnd?: number;
+    exit?: { minutes: number; status: string };
+  }>();
   punches.forEach((punch) => {
-    if (punch.type !== 'saida' || punch.status === 'rejected') return;
+    if (punch.status === 'rejected') return;
     const time = localDateAndMinutes(punch.recordedAt);
     if (!time) return;
-    const previous = lastExitByDay.get(time.date);
-    if (!previous || time.minutes > previous.minutes) {
-      lastExitByDay.set(time.date, { minutes: time.minutes, status: punch.status });
+    const day = punchesByDay.get(time.date) || {};
+    if (punch.type === 'entrada' && day.entry === undefined) {
+      day.entry = time.minutes;
+    } else if (punch.type === 'saida_almoco' && day.lunchStart === undefined) {
+      day.lunchStart = time.minutes;
+    } else if (punch.type === 'retorno_almoco' && day.lunchEnd === undefined) {
+      day.lunchEnd = time.minutes;
+    } else if (punch.type === 'saida' && (!day.exit || time.minutes > day.exit.minutes)) {
+      day.exit = { minutes: time.minutes, status: punch.status };
     }
+    punchesByDay.set(time.date, day);
   });
 
-  return Array.from(lastExitByDay.values()).reduce<MonthlyOvertime>(
-    (total, exit) => {
-      const minutes = Math.max(0, exit.minutes - expectedEnd);
-      if (exit.status === 'confirmed') total.confirmedMinutes += minutes;
-      if (exit.status === 'pending') total.pendingMinutes += minutes;
+  return Array.from(punchesByDay.values()).reduce<MonthlyOvertime>(
+    (total, day) => {
+      if (!day.exit) return total;
+
+      let normalEnd = expectedEnd;
+      if (normalEnd === null && day.entry !== undefined) {
+        const standardWorkMinutes =
+          (timeToMinutes(DEFAULT_WORK_SCHEDULE.lunchStart) || 0) -
+          (timeToMinutes(DEFAULT_WORK_SCHEDULE.start) || 0) +
+          (timeToMinutes(DEFAULT_WORK_SCHEDULE.end) || 0) -
+          (timeToMinutes(DEFAULT_WORK_SCHEDULE.lunchEnd) || 0);
+        const recordedBreakMinutes =
+          day.lunchStart !== undefined &&
+          day.lunchEnd !== undefined &&
+          day.lunchEnd > day.lunchStart
+            ? day.lunchEnd - day.lunchStart
+            : (timeToMinutes(DEFAULT_WORK_SCHEDULE.lunchEnd) || 0) -
+              (timeToMinutes(DEFAULT_WORK_SCHEDULE.lunchStart) || 0);
+        normalEnd = day.entry + standardWorkMinutes + recordedBreakMinutes;
+      }
+
+      if (normalEnd === null) return total;
+      const minutes = Math.max(0, day.exit.minutes - normalEnd);
+      if (day.exit.status === 'confirmed') total.confirmedMinutes += minutes;
+      if (day.exit.status === 'pending') total.pendingMinutes += minutes;
       return total;
     },
     { confirmedMinutes: 0, pendingMinutes: 0 },

@@ -1565,6 +1565,41 @@ export default function DashboardPage() {
         ) : null}
         {loading ? <div className="panel" role="status">Carregando dados do Supabase...</div> : null}
 
+        {isEmployee ? (
+          <div className="panel" style={{ marginBottom: 18 }}>
+            <h3>Horas extras deste mês</h3>
+            <p className="subtle">
+              {new Date().toLocaleDateString('pt-BR', {
+                month: 'long',
+                year: 'numeric',
+                timeZone: ATTENDANCE_TIME_ZONE,
+              })}
+              {' · '}
+              {employeeOvertimeSchedule
+                ? `calculadas após a saída normal às ${employeeOvertimeSchedule.end}`
+                : 'na jornada flexível, começam após 9 horas trabalhadas no dia, considerando o intervalo'}
+            </p>
+            {overtimeLoadError ? (
+              <p role="alert" style={{ color: '#a63232' }}>{overtimeLoadError}</p>
+            ) : employeeOvertimeSchedule ? (
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <span className="subtle">Confirmadas</span>
+                  <strong>{formatOvertimeMinutes(monthlyOvertime.confirmedMinutes)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span className="subtle">Aguardando aprovação</span>
+                  <strong>{formatOvertimeMinutes(monthlyOvertime.pendingMinutes)}</strong>
+                </div>
+              </div>
+            ) : (
+              <p className="subtle">
+                Na jornada flexível, o cálculo considera 9 horas trabalhadas, descontando o intervalo de almoço registrado (ou 1h30 se as marcações de almoço estiverem ausentes).
+              </p>
+            )}
+          </div>
+        ) : null}
+
         {isManager && activeView === 'dashboard' && (
           <>
             <div className="stats-grid">
@@ -1632,40 +1667,6 @@ export default function DashboardPage() {
 
         {activeView === 'point' && (
           <div className="content-grid">
-            {isEmployee ? (
-              <div className="panel">
-                <h3>Horas extras deste mês</h3>
-                <p className="subtle">
-                  {new Date().toLocaleDateString('pt-BR', {
-                    month: 'long',
-                    year: 'numeric',
-                    timeZone: ATTENDANCE_TIME_ZONE,
-                  })}
-                  {' · '}
-                  {employeeOvertimeSchedule
-                    ? `calculadas após a saída normal às ${employeeOvertimeSchedule.end}`
-                    : 'sua jornada está configurada como flexível'}
-                </p>
-                {overtimeLoadError ? (
-                  <p role="alert" style={{ color: '#a63232' }}>{overtimeLoadError}</p>
-                ) : employeeOvertimeSchedule ? (
-                  <div className="stats-grid">
-                    <div className="stat-card">
-                      <span className="subtle">Confirmadas</span>
-                      <strong>{formatOvertimeMinutes(monthlyOvertime.confirmedMinutes)}</strong>
-                    </div>
-                    <div className="stat-card">
-                      <span className="subtle">Aguardando aprovação</span>
-                      <strong>{formatOvertimeMinutes(monthlyOvertime.pendingMinutes)}</strong>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="subtle">
-                    Não há cálculo automático de horas extras para jornada flexível.
-                  </p>
-                )}
-              </div>
-            ) : null}
             <div className="panel">
               <h3>{isEmployee ? 'Registrar meu ponto' : 'Registrar ponto'}</h3>
               {isEmployee ? (
