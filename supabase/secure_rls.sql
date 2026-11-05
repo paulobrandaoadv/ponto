@@ -1,3 +1,5 @@
+drop function if exists public.record_own_attendance_with_passkey(text, text, double precision, double precision, double precision, uuid);
+
 alter table public.employees
   add column if not exists sabado_ate_meio_dia boolean not null default false;
 
@@ -78,33 +80,6 @@ alter table public.employees
 create unique index if not exists employees_codigo_registro_key
   on public.employees (codigo_registro);
 
-create table if not exists public.employee_passkeys (
-  credential_id text primary key,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  company_id uuid not null references public.companies(id) on delete cascade,
-  public_key text not null,
-  counter bigint not null default 0,
-  transports text[] not null default '{}',
-  device_type text not null,
-  backed_up boolean not null default false,
-  created_at timestamptz not null default now()
-);
-
-create index if not exists employee_passkeys_user_id_idx
-  on public.employee_passkeys (user_id);
-
-create table if not exists public.passkey_challenges (
-  id uuid primary key,
-  user_id uuid not null references auth.users(id) on delete cascade,
-  company_id uuid not null references public.companies(id) on delete cascade,
-  challenge text not null,
-  purpose text not null check (purpose in ('register', 'authenticate')),
-  expires_at timestamptz not null,
-  verified_at timestamptz,
-  used_at timestamptz,
-  created_at timestamptz not null default now()
-);
-
 create table if not exists public.employee_face_templates (
   employee_id uuid primary key references public.employees(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -126,18 +101,8 @@ create table if not exists public.face_auth_challenges (
   created_at timestamptz not null default now()
 );
 
-alter table public.passkey_challenges
-  add column if not exists used_at timestamptz;
-
-create index if not exists passkey_challenges_user_id_idx
-  on public.passkey_challenges (user_id, purpose, expires_at);
-
-alter table public.employee_passkeys enable row level security;
-alter table public.passkey_challenges enable row level security;
 alter table public.employee_face_templates enable row level security;
 alter table public.face_auth_challenges enable row level security;
-revoke all on public.employee_passkeys, public.passkey_challenges from public, anon, authenticated;
-grant all on public.employee_passkeys, public.passkey_challenges to service_role;
 revoke all on public.employee_face_templates, public.face_auth_challenges from public, anon, authenticated;
 grant all on public.employee_face_templates, public.face_auth_challenges to service_role;
 
@@ -512,67 +477,6 @@ $$;
 
 revoke all on function public.record_own_attendance(text, text, double precision, double precision, double precision) from public, anon;
 grant execute on function public.record_own_attendance(text, text, double precision, double precision, double precision) to authenticated;
-
-create or replace function public.record_own_attendance_with_passkey(
-  p_location text,
-  p_notes text,
-  p_latitude double precision,
-  p_longitude double precision,
-  p_accuracy double precision,
-  p_challenge_id uuid
-)
-returns uuid
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  verified_challenge public.passkey_challenges%rowtype;
-  new_record_id uuid;
-begin
-  if auth.uid() is null or (select public.app_current_role()) <> 'funcionario' then
-    raise exception 'Somente funcionário autenticado pode registrar o próprio ponto.';
-  end if;
-
-  select *
-  into verified_challenge
-  from public.passkey_challenges
-  where id = p_challenge_id
-    and user_id = auth.uid()
-    and company_id = (select public.app_current_company_id())
-    and purpose = 'authenticate'
-    and verified_at is not null
-    and used_at is null
-    and expires_at > now()
-  for update;
-
-  if not found then
-    raise exception 'A verificação do aparelho é inválida, expirou ou já foi usada.';
-  end if;
-
-  update public.passkey_challenges
-  set used_at = now()
-  where id = verified_challenge.id;
-
-  new_record_id := public.record_own_attendance(
-    p_location,
-    p_notes,
-    p_latitude,
-    p_longitude,
-    p_accuracy
-  );
-
-  update public.attendance_records
-  set source = 'web_passkey'
-  where id = new_record_id
-    and recorded_by = auth.uid();
-
-  return new_record_id;
-end;
-$$;
-
-revoke all on function public.record_own_attendance_with_passkey(text, text, double precision, double precision, double precision, uuid) from public, anon;
-grant execute on function public.record_own_attendance_with_passkey(text, text, double precision, double precision, double precision, uuid) to authenticated;
 
 create or replace function public.record_own_attendance_with_face(
   p_location text,
@@ -977,12 +881,6 @@ begin
     set status = 'inativo'
     where id = employee_to_archive.user_id;
 
-    delete from public.employee_passkeys
-    where user_id = employee_to_archive.user_id;
-
-    delete from public.passkey_challenges
-    where user_id = employee_to_archive.user_id;
-
     delete from public.face_auth_challenges
     where user_id = employee_to_archive.user_id;
   end if;
@@ -1016,6 +914,78 @@ $$;
 
 revoke all on function public.archive_employee(uuid) from public, anon;
 grant execute on function public.archive_employee(uuid) to authenticated;
+
+drop table if exists public.employee_passkeys;
+drop table if exists public.passkey_challenges;
+
+create or replace function public.delete_employee_permanently(p_employee_id uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  employee_to_delete public.employees%rowtype;
+  linked_profile public.profiles%rowtype;
+  linked_user_id uuid;
+begin
+  if auth.uid() is null or not (select public.app_is_company_manager()) then
+    raise exception 'Somente administradores e gestores podem excluir funcionários.';
+  end if;
+
+  select *
+  into employee_to_delete
+  from public.employees
+  where id = p_employee_id
+    and company_id = (select public.app_current_company_id())
+  for update;
+
+  if not found then
+    raise exception 'Funcionário não encontrado nesta empresa.';
+  end if;
+
+  linked_user_id := employee_to_delete.user_id;
+  if linked_user_id is not null then
+    select *
+    into linked_profile
+    from public.profiles
+    where id = linked_user_id
+    for update;
+
+    if not found or linked_profile.role <> 'funcionario'
+      or linked_profile.company_id <> employee_to_delete.company_id then
+      raise exception 'A conta vinculada não é um perfil de funcionário desta empresa.';
+    end if;
+
+    delete from public.profiles
+    where id = linked_user_id;
+  end if;
+
+  delete from public.employees
+  where id = employee_to_delete.id
+    and company_id = employee_to_delete.company_id;
+
+  insert into public.audit_logs (
+    table_name,
+    record_id,
+    user_id,
+    action,
+    new_values
+  )
+  values (
+    'employees',
+    employee_to_delete.id,
+    auth.uid(),
+    'employee_permanently_deleted',
+    jsonb_build_object('permanent', true)
+  );
+
+  return linked_user_id;
+end;
+$$;
+
+revoke all on function public.delete_employee_permanently(uuid) from public, anon;
+grant execute on function public.delete_employee_permanently(uuid) to authenticated;
 
 create or replace function public.restore_employee(p_employee_id uuid)
 returns void
