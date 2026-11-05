@@ -1737,11 +1737,12 @@ export default function DashboardPage() {
                         <input id="workEnd" name="workEnd" type="time" defaultValue={scheduleDefaults.end} />
                       </div>
                     </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                    <label className="field full" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                       <input
                         type="checkbox"
                         name="flexibleSchedule"
                         defaultChecked={Boolean(editingEmployee && /flex/i.test(editingEmployee.shift))}
+                        style={{ width: 18, height: 18 }}
                       />
                       Jornada flexível (sem cálculo automático de horas extras)
                     </label>
