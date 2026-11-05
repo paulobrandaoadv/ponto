@@ -1537,7 +1537,7 @@ export default function DashboardPage() {
         )}
 
         {activeView === 'point' && (
-          <div className="content-grid">
+          <div className="content-grid attendance-management-grid">
             <div className="panel">
               <h3>{isEmployee ? 'Registrar meu ponto' : 'Registrar ponto'}</h3>
               {isEmployee ? (

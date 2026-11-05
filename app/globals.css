@@ -193,6 +193,10 @@ main {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.attendance-management-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .panel {
   min-width: 0;
   background: var(--panel);
