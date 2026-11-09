@@ -1919,9 +1919,6 @@ export default function DashboardPage() {
                           <div className="employee-actions">
                             {employee.status === 'Ativo' ? (
                               <>
-                                <span className="subtle">
-                                  {faceEnrolledEmployeeIds.has(employee.id) ? 'Rosto cadastrado' : 'Sem rosto cadastrado'}
-                                </span>
                                 <button
                                   type="button"
                                   className="btn secondary compact"
@@ -2076,7 +2073,7 @@ export default function DashboardPage() {
                              disabled={saving}
                              aria-label={`Excluir definitivamente ${employee.name}`}
                            >
-                             Excluir definitivamente
+                             Excluir
                            </button>
                           </div>
                         </td>
