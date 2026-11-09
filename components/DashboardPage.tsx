@@ -1884,7 +1884,7 @@ export default function DashboardPage() {
 
             <div className="panel">
               <h3>Funcionários cadastrados</h3>
-              <div className="table-wrap">
+              <div className="table-wrap employees-table-wrap">
                 <table>
                   <thead>
                     <tr>

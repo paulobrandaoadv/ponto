@@ -577,6 +577,17 @@ th {
   letter-spacing: 0.04em;
 }
 
+@media (min-width: 981px) {
+  .employees-table-wrap {
+    overflow-x: visible;
+  }
+
+  .employees-table-wrap th,
+  .employees-table-wrap td {
+    white-space: normal;
+  }
+}
+
 .empty {
   color: var(--muted);
   padding: 14px 0;
