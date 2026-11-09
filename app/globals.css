@@ -761,3 +761,9 @@ th {
     font-size: 0.84rem;
   }
 }
+
+.password-field{position:relative}
+.password-field input{padding-right:48px}
+.password-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:var(--primary);cursor:pointer;padding:0}
+.password-toggle:hover{color:var(--accent)}
+.password-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
