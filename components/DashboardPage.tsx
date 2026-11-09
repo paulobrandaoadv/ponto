@@ -1704,7 +1704,7 @@ export default function DashboardPage() {
 
             <div className="panel">
               <h3>Últimas marcações</h3>
-              <div className="table-wrap">
+              <div className="table-wrap employees-table-wrap">
                 <table>
                   <thead>
                     <tr>
@@ -2140,7 +2140,7 @@ export default function DashboardPage() {
             <p className="subtle">
               A revisão altera apenas o status. Data, hora, tipo e demais dados da marcação permanecem preservados.
             </p>
-            <div className="table-wrap">
+            <div className="table-wrap employees-table-wrap">
               <table>
                 <thead>
                   <tr>
