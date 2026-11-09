@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { cpfDigits, cpfSearchPattern, displayCpf, sameCpf } from '@/lib/cpf';
 
 export const runtime = 'nodejs';
 
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
   const name = body.name.trim().replace(/\s+/g, ' ');
   const email = body.email.trim().toLowerCase();
   const password = body.password;
-  const cpf = body.cpf.trim();
+  const cpf = displayCpf(body.cpf.trim());
   const department = body.department.trim();
   const jobTitle = body.jobTitle.trim();
   const shift = body.shift.trim();
@@ -115,6 +116,21 @@ export async function POST(request: NextRequest) {
     !managerProfile.company_id
   ) {
     return NextResponse.json({ error: 'Somente administradores e gestores podem cadastrar funcionários.' }, { status: 403 });
+  }
+
+  let duplicateQuery = admin
+    .from('employees')
+    .select('cpf')
+    .eq('company_id', managerProfile.company_id);
+  duplicateQuery = cpfDigits(cpf).length === 11
+    ? duplicateQuery.like('cpf', cpfSearchPattern(cpf))
+    : duplicateQuery.eq('cpf', cpf);
+  const { data: matches, error: duplicateError } = await duplicateQuery;
+  if (duplicateError) {
+    return NextResponse.json({ error: 'Não foi possível verificar o CPF do funcionário.' }, { status: 500 });
+  }
+  if (matches.some((employee) => sameCpf(cpf, employee.cpf))) {
+    return NextResponse.json({ error: 'Já existe um funcionário cadastrado com esse CPF nesta empresa.' }, { status: 400 });
   }
 
   const { data: newUser, error: authError } = await admin.auth.admin.createUser({

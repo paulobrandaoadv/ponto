@@ -16,6 +16,7 @@ import {
   type WorkSchedule,
 } from '@/lib/attendance-overtime';
 import { supabase } from '@/lib/supabase';
+import { cpfDigits, cpfSearchPattern, displayCpf, formatCpfInput, sameCpf } from '@/lib/cpf';
 
 type Employee = {
   id: string;
@@ -644,22 +645,15 @@ export default function DashboardPage() {
 
     let duplicateQuery = supabase
       .from('employees')
-      .select('id')
-      .eq('company_id', companyId)
-      .eq('cpf', cpf)
-      .limit(1)
-      .maybeSingle();
+      .select('id, cpf')
+      .eq('company_id', companyId);
+    duplicateQuery = cpfDigits(cpf).length === 11
+      ? duplicateQuery.like('cpf', cpfSearchPattern(cpf))
+      : duplicateQuery.eq('cpf', cpf);
     if (editingEmployee) {
-      duplicateQuery = supabase
-        .from('employees')
-        .select('id')
-        .eq('company_id', companyId)
-        .eq('cpf', cpf)
-        .neq('id', editingEmployee.id)
-        .limit(1)
-        .maybeSingle();
+      duplicateQuery = duplicateQuery.neq('id', editingEmployee.id);
     }
-    const { data: duplicate, error: duplicateError } = await duplicateQuery;
+    const { data: matches, error: duplicateError } = await duplicateQuery;
 
     if (duplicateError) {
       setErrorMessage(`Não foi possível verificar o CPF: ${duplicateError.message}`);
@@ -667,7 +661,7 @@ export default function DashboardPage() {
       return;
     }
 
-    if (duplicate) {
+    if (matches?.some((employee) => sameCpf(cpf, employee.cpf))) {
       setErrorMessage('Já existe um funcionário cadastrado com esse CPF nesta empresa.');
       setSaving(false);
       return;
@@ -1772,7 +1766,39 @@ export default function DashboardPage() {
 
                   <div className="field">
                     <label htmlFor="cpf">CPF</label>
-                    <input id="cpf" name="cpf" type="text" inputMode="numeric" defaultValue={editingEmployee?.cpf || ''} required />
+                    <input
+                      id="cpf"
+                      name="cpf"
+                      type="text"
+                      inputMode="numeric"
+                      defaultValue={displayCpf(editingEmployee?.cpf || '')}
+                      placeholder="000.000.000-00"
+                      onChange={(event) => {
+                        const input = event.currentTarget;
+                        const position = input.selectionStart ?? input.value.length;
+                        const cursor = formatCpfInput(input.value.slice(0, position)).length;
+                        input.value = formatCpfInput(input.value);
+                        input.setSelectionRange(cursor, cursor);
+                      }}
+                      onKeyDown={(event) => {
+                        const input = event.currentTarget;
+                        const start = input.selectionStart;
+                        const end = input.selectionEnd;
+                        if (start === null || start !== end) return;
+                        const backward = event.key === 'Backspace';
+                        const forward = event.key === 'Delete';
+                        const separator = backward ? start - 1 : start;
+                        if ((!backward && !forward) || !/[.\-]/.test(input.value[separator] || '')) return;
+                        event.preventDefault();
+                        const digitIndex = backward ? separator - 1 : separator + 1;
+                        if (digitIndex < 0 || digitIndex >= input.value.length) return;
+                        const next = input.value.slice(0, digitIndex) + input.value.slice(digitIndex + 1);
+                        const cursor = formatCpfInput(next.slice(0, digitIndex)).length;
+                        input.value = formatCpfInput(next);
+                        input.setSelectionRange(cursor, cursor);
+                      }}
+                      required
+                    />
                   </div>
 
                   <div className="field">
@@ -1920,7 +1946,7 @@ export default function DashboardPage() {
                         <td>{employee.registrationCode}</td>
                         <td>{employee.name}</td>
                         <td>{employee.department}</td>
-                        <td>{employee.cpf}</td>
+                        <td>{displayCpf(employee.cpf)}</td>
                         <td>
                           {displayShift(employee.shift)}
                           {employee.saturdayUntilNoon ? ' · Sáb até 12h' : ''}
