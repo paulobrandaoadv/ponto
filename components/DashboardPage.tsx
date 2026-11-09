@@ -1519,9 +1519,25 @@ export default function DashboardPage() {
             {overtimeLoadError ? (
               <p role="alert" className="employee-overtime-error">{overtimeLoadError}</p>
             ) : (
-              <strong className="employee-overtime-total">
-                {loading ? 'Carregando...' : formatOvertimeMinutes(totalMonthlyOvertimeMinutes)}
-              </strong>
+              <>
+                <strong className="employee-overtime-total">
+                  {loading ? 'Carregando...' : formatOvertimeMinutes(totalMonthlyOvertimeMinutes)}
+                </strong>
+                {!loading && monthlyOvertime.days.length > 0 ? (
+                  <div className="employee-overtime-days">
+                    <h4>Horas extras por dia</h4>
+                    <ul>
+                      {monthlyOvertime.days.map((day) => (
+                        <li key={day.date}>
+                          <time dateTime={day.date}>{day.date.split('-').reverse().join('/')}</time>
+                          <strong>{formatOvertimeMinutes(day.minutes)}</strong>
+                        </li>
+                      ))}
+                    </ul>
+                    <p>O total inclui marcações pendentes de revisão.</p>
+                  </div>
+                ) : null}
+              </>
             )}
           </div>
         ) : null}

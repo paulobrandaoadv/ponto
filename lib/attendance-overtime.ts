@@ -14,6 +14,7 @@ export type OvertimePunch = {
 export type MonthlyOvertime = {
   confirmedMinutes: number;
   pendingMinutes: number;
+  days: { date: string; minutes: number }[];
 };
 
 export const ATTENDANCE_TIME_ZONE = 'America/Campo_Grande';
@@ -104,7 +105,7 @@ export function calculateMonthlyOvertime(
   saturdayUntilNoon = false,
 ): MonthlyOvertime {
   const expectedEnd = schedule ? timeToMinutes(schedule.end) : null;
-  if (schedule && expectedEnd === null) return { confirmedMinutes: 0, pendingMinutes: 0 };
+  if (schedule && expectedEnd === null) return { confirmedMinutes: 0, pendingMinutes: 0, days: [] };
 
   const punchesByDay = new Map<string, {
     entry?: number;
@@ -133,7 +134,7 @@ export function calculateMonthlyOvertime(
     punchesByDay.set(time.date, day);
   });
 
-  return Array.from(punchesByDay.entries()).reduce<MonthlyOvertime>(
+  return Array.from(punchesByDay.entries()).sort(([a], [b]) => b.localeCompare(a)).reduce<MonthlyOvertime>(
     (total, [date, day]) => {
       const dayOfWeek = new Date(`${date}T00:00:00Z`).getUTCDay();
       const isSaturday = dayOfWeek === 6;
@@ -191,10 +192,12 @@ export function calculateMonthlyOvertime(
       }
 
       if (exit.status === 'confirmed') total.confirmedMinutes += minutes;
-      if (exit.status === 'pending') total.pendingMinutes += minutes;
+      else if (exit.status === 'pending') total.pendingMinutes += minutes;
+      else return total;
+      if (minutes > 0) total.days.push({ date, minutes });
       return total;
     },
-    { confirmedMinutes: 0, pendingMinutes: 0 },
+    { confirmedMinutes: 0, pendingMinutes: 0, days: [] },
   );
 }
 

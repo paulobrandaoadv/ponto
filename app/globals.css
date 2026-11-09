@@ -231,6 +231,7 @@ main {
 
 .employee-overtime-panel {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
@@ -260,6 +261,36 @@ main {
 .employee-overtime-error {
   margin: 0;
   color: #a63232;
+}
+
+.employee-overtime-days {
+  flex: 1 0 100%;
+  min-width: 0;
+}
+
+.employee-overtime-days h4 {
+  margin: 0 0 8px;
+  color: var(--primary);
+}
+
+.employee-overtime-days ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.employee-overtime-days li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.employee-overtime-days p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .list {
