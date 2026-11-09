@@ -111,12 +111,16 @@ export function calculateMonthlyOvertime(
     lunchStart?: number;
     lunchEnd?: number;
     exit?: { minutes: number; status: string };
+    last?: { minutes: number; status: string };
   }>();
   punches.forEach((punch) => {
     if (punch.status === 'rejected') return;
     const time = localDateAndMinutes(punch.recordedAt);
     if (!time) return;
     const day = punchesByDay.get(time.date) || {};
+    if (!day.last || time.minutes > day.last.minutes) {
+      day.last = { minutes: time.minutes, status: punch.status };
+    }
     if (punch.type === 'entrada' && day.entry === undefined) {
       day.entry = time.minutes;
     } else if (punch.type === 'saida_almoco' && day.lunchStart === undefined) {
@@ -131,33 +135,35 @@ export function calculateMonthlyOvertime(
 
   return Array.from(punchesByDay.entries()).reduce<MonthlyOvertime>(
     (total, [date, day]) => {
-      if (!day.exit) return total;
-
       const dayOfWeek = new Date(`${date}T00:00:00Z`).getUTCDay();
       const isSaturday = dayOfWeek === 6;
       const isSunday = dayOfWeek === 0;
+      // Em fim de semana o funcionário pode ter só entrada e uma segunda marcação
+      // (registrada como saída de almoço); a última marcação vale como saída.
+      const exit = day.exit ?? (isSaturday || isSunday ? day.last : undefined);
+      if (!exit) return total;
       let minutes = 0;
 
       if (isSunday || (isSaturday && !saturdayUntilNoon)) {
-        if (day.entry === undefined || day.exit.minutes <= day.entry) return total;
+        if (day.entry === undefined || exit.minutes <= day.entry) return total;
         const recordedBreak =
           day.lunchStart !== undefined &&
           day.lunchEnd !== undefined &&
           day.lunchEnd > day.lunchStart
             ? day.lunchEnd - day.lunchStart
             : 0;
-        minutes = Math.max(0, day.exit.minutes - day.entry - recordedBreak);
+        minutes = Math.max(0, exit.minutes - day.entry - recordedBreak);
       } else if (isSaturday && saturdayUntilNoon) {
         const overtimeStart = 12 * 60;
-        if (day.exit.minutes <= overtimeStart) return total;
-        const overtimeWindow = day.exit.minutes - overtimeStart;
+        if (exit.minutes <= overtimeStart) return total;
+        const overtimeWindow = exit.minutes - overtimeStart;
         const recordedBreakOverlap =
           day.lunchStart !== undefined &&
           day.lunchEnd !== undefined &&
           day.lunchEnd > day.lunchStart
             ? Math.max(
                 0,
-                Math.min(day.exit.minutes, day.lunchEnd) -
+                Math.min(exit.minutes, day.lunchEnd) -
                   Math.max(overtimeStart, day.lunchStart),
               )
             : 0;
@@ -181,11 +187,11 @@ export function calculateMonthlyOvertime(
         }
 
         if (normalEnd === null) return total;
-        minutes = Math.max(0, day.exit.minutes - normalEnd);
+        minutes = Math.max(0, exit.minutes - normalEnd);
       }
 
-      if (day.exit.status === 'confirmed') total.confirmedMinutes += minutes;
-      if (day.exit.status === 'pending') total.pendingMinutes += minutes;
+      if (exit.status === 'confirmed') total.confirmedMinutes += minutes;
+      if (exit.status === 'pending') total.pendingMinutes += minutes;
       return total;
     },
     { confirmedMinutes: 0, pendingMinutes: 0 },
