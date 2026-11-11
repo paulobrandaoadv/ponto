@@ -5,7 +5,6 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import FaceCamera from '@/components/FaceCamera';
 import {
-  ATTENDANCE_TIME_ZONE,
   calculateMonthlyOvertime,
   DEFAULT_WORK_SCHEDULE,
   formatOvertimeMinutes,
@@ -15,6 +14,13 @@ import {
   type OvertimePunch,
   type WorkSchedule,
 } from '@/lib/attendance-overtime';
+import {
+  ATTENDANCE_TIME_ZONE,
+  attendanceDate as localDate,
+  attendanceTime as localTime,
+  attendanceDateTimeToIso,
+  nextAttendanceDate,
+} from '@/lib/attendance-time';
 import { supabase } from '@/lib/supabase';
 import { cpfDigits, cpfSearchPattern, displayCpf, formatCpfInput, sameCpf } from '@/lib/cpf';
 
@@ -77,19 +83,6 @@ const getLocationSnapshot = () =>
     );
   });
 
-const localDate = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const localTime = (date: Date) => {
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return `${hours}:${minutes}`;
-};
-
 const displayEventType = (type: AttendanceEntry['type']) => ({
   entrada: 'Entrada',
   saida_almoco: 'Saída almoço',
@@ -109,40 +102,6 @@ const displayShift = (shift: string) => {
     : shift;
 };
 
-const zonedMonthBoundary = (year: number, month: number) => {
-  const targetUtc = Date.UTC(year, month - 1, 1);
-  let timestamp = targetUtc;
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: ATTENDANCE_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  });
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const parts = formatter.formatToParts(new Date(timestamp));
-    const part = (type: Intl.DateTimeFormatPartTypes) =>
-      Number(parts.find((item) => item.type === type)?.value);
-    const localAsUtc = Date.UTC(
-      part('year'),
-      part('month') - 1,
-      part('day'),
-      part('hour'),
-      part('minute'),
-      part('second'),
-    );
-    const correction = targetUtc - localAsUtc;
-    timestamp += correction;
-    if (correction === 0) break;
-  }
-
-  return new Date(timestamp).toISOString();
-};
-
 const attendanceMonthRange = (date: Date) => {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: ATTENDANCE_TIME_ZONE,
@@ -157,8 +116,8 @@ const attendanceMonthRange = (date: Date) => {
   const nextMonthYear = numericMonth === 12 ? numericYear + 1 : numericYear;
   const nextMonth = numericMonth === 12 ? 1 : numericMonth + 1;
   return {
-    start: zonedMonthBoundary(numericYear, numericMonth),
-    end: zonedMonthBoundary(nextMonthYear, nextMonth),
+    start: attendanceDateTimeToIso(`${year}-${month}-01`),
+    end: attendanceDateTimeToIso(`${nextMonthYear}-${String(nextMonth).padStart(2, '0')}-01`),
   };
 };
 
@@ -196,8 +155,7 @@ export default function DashboardPage() {
   const [linkingEmployeeId, setLinkingEmployeeId] = useState('');
   const [resettingPasswordEmployeeId, setResettingPasswordEmployeeId] = useState('');
   const [reportFrom, setReportFrom] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    return `${localDate(new Date()).slice(0, 7)}-01`;
   });
   const [reportTo, setReportTo] = useState(() => localDate(new Date()));
   const [reportEmployeeId, setReportEmployeeId] = useState('');
@@ -461,8 +419,7 @@ export default function DashboardPage() {
       const scheduledStart = employee?.shift.match(/\d{2}:\d{2}/)?.[0];
       return scheduledStart ? entry.time > scheduledStart : false;
     }).length;
-    const now = new Date();
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const monthStart = `${today.slice(0, 7)}-01`;
     const monthlyEntries = attendance.filter((item) => item.date >= monthStart);
     const validMonthlyEntries = monthlyEntries.filter((item) => item.status !== 'rejected');
 
@@ -497,11 +454,15 @@ export default function DashboardPage() {
       return;
     }
 
-    const start = new Date(`${reportFrom}T00:00:00`);
-    const end = new Date(`${reportTo}T00:00:00`);
-    end.setDate(end.getDate() + 1);
-    const startIso = start.toISOString();
-    const endIso = end.toISOString();
+    let startIso: string;
+    let endIso: string;
+    try {
+      startIso = attendanceDateTimeToIso(reportFrom);
+      endIso = attendanceDateTimeToIso(nextAttendanceDate(reportTo));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Não foi possível determinar o período do relatório.');
+      return;
+    }
 
     setReportLoading(true);
     setReportLoaded(false);
@@ -959,34 +920,47 @@ export default function DashboardPage() {
         return;
       }
 
-      const now = new Date();
+      const { data: savedPunch, error: savedPunchError } = await supabase
+        .from('attendance_records')
+        .select('event_type, recorded_at, status')
+        .eq('id', recordId)
+        .single();
+      if (savedPunchError || !savedPunch) {
+        setErrorMessage('O ponto foi registrado, mas não foi possível atualizar o horário na tela. Atualize a página antes de fazer outra marcação.');
+        setSaving(false);
+        return;
+      }
+
+      const recordedAt = new Date(savedPunch.recorded_at);
       setAttendance((current) => [
         {
           id: recordId,
           employeeId: employee.id,
           employeeName: employee.name,
-          type: nextEmployeeEvent,
-          date: localDate(now),
-          time: localTime(now),
+          type: savedPunch.event_type,
+          date: localDate(recordedAt),
+          time: localTime(recordedAt),
           location: location || '—',
           notes,
-          status: 'pending',
+          status: savedPunch.status,
           latitude: locationSnapshot.latitude,
           longitude: locationSnapshot.longitude,
           accuracy: locationSnapshot.accuracy,
         },
         ...current,
       ]);
-      setMonthlyOvertimePunches((current) => [
-        ...current,
-        {
-          type: nextEmployeeEvent,
-          recordedAt: now.toISOString(),
-          status: 'pending',
-        },
-      ]);
+      if (localDate(recordedAt).slice(0, 7) === localDate(new Date()).slice(0, 7)) {
+        setMonthlyOvertimePunches((current) => [
+          ...current,
+          {
+            type: savedPunch.event_type,
+            recordedAt: savedPunch.recorded_at,
+            status: savedPunch.status,
+          },
+        ]);
+      }
       setMessage(
-        `${displayEventType(nextEmployeeEvent)} registrada com localização GPS (precisão aproximada de ${Math.round(locationSnapshot.accuracy)} m) e enviada para revisão.`,
+        `${displayEventType(savedPunch.event_type)} registrada às ${localTime(recordedAt)} (horário de Mato Grosso do Sul), com localização GPS (precisão aproximada de ${Math.round(locationSnapshot.accuracy)} m) e enviada para revisão.`,
       );
       setSaving(false);
       form.reset();
@@ -1007,8 +981,14 @@ export default function DashboardPage() {
     setSaving(true);
     setMessage('');
     setErrorMessage('');
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-    const recordedAt = new Date(`${date}T${time}:00`);
+    let recordedAt: string;
+    try {
+      recordedAt = attendanceDateTimeToIso(date, time);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Não foi possível determinar o horário da marcação.');
+      setSaving(false);
+      return;
+    }
     const { data: record, error: insertError } = await supabase
       .from('attendance_records')
       .insert({
@@ -1016,8 +996,8 @@ export default function DashboardPage() {
         company_id: companyId,
         source: 'web',
         event_type: type,
-        recorded_at: recordedAt.toISOString(),
-        timezone,
+        recorded_at: recordedAt,
+        timezone: ATTENDANCE_TIME_ZONE,
         status: 'pending',
         location: location || null,
         notes: notes || null,
@@ -1404,6 +1384,7 @@ export default function DashboardPage() {
       : 'GPS não registrado';
 
   const dateLabel = new Date().toLocaleDateString('pt-BR', {
+    timeZone: ATTENDANCE_TIME_ZONE,
     weekday: 'long',
     day: '2-digit',
     month: 'long',
@@ -1608,7 +1589,7 @@ export default function DashboardPage() {
               {isEmployee ? (
                 <div className="subtle">
                   <p>
-                    O horário será registrado pelo servidor no momento da marcação. O registro não pode ser editado e ficará pendente de revisão.
+                    O horário será registrado pelo servidor no momento da marcação, no fuso de Mato Grosso do Sul. O registro não pode ser editado e ficará pendente de revisão.
                   </p>
                   <p>
                     O navegador solicitará sua localização apenas ao registrar o ponto. Não há rastreamento em segundo plano; sem permissão de GPS, a marcação não será enviada.
@@ -1659,7 +1640,7 @@ export default function DashboardPage() {
                       </div>
 
                       <div className="field">
-                        <label htmlFor="time">Hora</label>
+                        <label htmlFor="time">Hora (Mato Grosso do Sul)</label>
                         <input id="time" name="time" type="time" defaultValue={localTime(new Date())} required />
                       </div>
                     </>

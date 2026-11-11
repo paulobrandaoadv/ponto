@@ -93,6 +93,8 @@ Administradores ativos podem cadastrar outros administradores pelo item **Admini
 
 Cadastros antigos sem conta podem continuar usando **Vincular login** após criar sua conta em **Authentication → Users**. O funcionário verá apenas **Meu ponto**. A função `record_own_attendance` registra o horário do servidor, aplica a sequência diária de quatro marcações e não aceita horário enviado pelo navegador. Marcações rejeitadas aparecem no histórico, mas não avançam a sequência; o funcionário pode refazer aquela etapa.
 
+As marcações, consultas, relatórios e horas extras usam o fuso de Mato Grosso do Sul (`America/Campo_Grande`), independentemente do fuso configurado no aparelho. A marcação própria usa o horário do servidor; os horários digitados pelo administrador são interpretados nesse mesmo fuso. A mudança não altera automaticamente registros antigos.
+
 No perfil do funcionário, o total de horas extras do mês atual inclui marcações confirmadas e pendentes e apresenta os dias com horas extras e a quantidade calculada em cada dia.
 
 Se o funcionário esquecer a senha, um administrador ou gestor pode abrir **Funcionários → Redefinir senha**, definir uma senha temporária e entregá-la em particular. A alteração é registrada na auditoria; por segurança, a senha não é exibida novamente nem enviada por e-mail.

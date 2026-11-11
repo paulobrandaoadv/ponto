@@ -7,7 +7,14 @@ const ts = require('typescript');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'lib', 'attendance-overtime.ts'), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
-const context = { exports: {}, Intl, Date };
+const timeSource = fs.readFileSync(path.join(__dirname, '..', 'lib', 'attendance-time.ts'), 'utf8');
+const timeCompiled = ts.transpileModule(timeSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+const timeContext = { exports: {}, Intl, Date };
+vm.runInNewContext(timeCompiled, timeContext);
+const context = { exports: {}, Intl, Date, require: (name) => {
+  if (name === './attendance-time') return timeContext.exports;
+  throw new Error(`Unexpected dependency: ${name}`);
+} };
 vm.runInNewContext(compiled, context);
 const { calculateMonthlyOvertime, DEFAULT_WORK_SCHEDULE } = context.exports;
 

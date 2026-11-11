@@ -17,8 +17,6 @@ export type MonthlyOvertime = {
   days: { date: string; minutes: number }[];
 };
 
-export const ATTENDANCE_TIME_ZONE = 'America/Campo_Grande';
-
 export const DEFAULT_WORK_SCHEDULE: WorkSchedule = {
   start: '07:00',
   lunchStart: '11:30',
@@ -206,3 +204,4 @@ export function formatOvertimeMinutes(minutes: number) {
   const remainingMinutes = minutes % 60;
   return `${hours}h ${String(remainingMinutes).padStart(2, '0')}min`;
 }
+import { ATTENDANCE_TIME_ZONE } from './attendance-time';
