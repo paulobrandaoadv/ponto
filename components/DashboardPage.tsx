@@ -155,7 +155,7 @@ export default function DashboardPage() {
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [todayLoadError, setTodayLoadError] = useState('');
-  const [peopleDialog, setPeopleDialog] = useState<'collaborators' | 'present' | 'late' | null>(null);
+  const [peopleDialog, setPeopleDialog] = useState<'collaborators' | 'present' | 'late' | 'missing' | null>(null);
   const peopleDialogRef = useRef<HTMLDialogElement>(null);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [linkingEmployeeId, setLinkingEmployeeId] = useState('');
@@ -477,7 +477,7 @@ export default function DashboardPage() {
           .map((item) => item.employeeId),
       ).size,
       activeTeam: present,
-      missing: Math.max(0, activeEmployees.length - present),
+      missing: people.missing.length,
       departmentCount: new Set(activeEmployees.map((employee) => employee.department)).size,
       people,
     };
@@ -1598,6 +1598,10 @@ export default function DashboardPage() {
                 <div className="stat-label">Atrasos</div>
                 <div className="stat-value">{todayLoadError ? '—' : stats.late}</div>
               </button>
+              <button type="button" className="stat-card stat-card-button danger" onClick={() => setPeopleDialog('missing')} disabled={loading || Boolean(todayLoadError)}>
+                <div className="stat-label">Faltas</div>
+                <div className="stat-value">{todayLoadError ? '—' : stats.missing}</div>
+              </button>
               <div className="stat-card primary">
                 <div className="stat-label">Marcações no mês</div>
                 <div className="stat-value">{stats.monthlyEntries}</div>
@@ -1607,7 +1611,7 @@ export default function DashboardPage() {
             <dialog ref={peopleDialogRef} className="people-dialog" aria-labelledby="people-dialog-title" onClose={() => setPeopleDialog(null)}>
               <div className="people-dialog-heading">
                 <h3 id="people-dialog-title">
-                  {peopleDialog === 'collaborators' ? 'Colaboradores' : peopleDialog === 'present' ? 'Presentes hoje' : 'Atrasos hoje'}
+                  {peopleDialog === 'collaborators' ? 'Colaboradores' : peopleDialog === 'present' ? 'Presentes hoje' : peopleDialog === 'missing' ? 'Faltas hoje' : 'Atrasos hoje'}
                 </h3>
                 <button type="button" className="btn secondary compact" onClick={() => peopleDialogRef.current?.close()}>Fechar</button>
               </div>
@@ -1617,8 +1621,11 @@ export default function DashboardPage() {
                 stats.people.present.length ? <ul>{stats.people.present.map((person) => <li key={person.id}><strong>{person.name}</strong><span>Entrada: {person.entryTime}</span></li>)}</ul> : <p>Nenhuma entrada registrada hoje.</p>
               ) : peopleDialog === 'late' ? (
                 stats.people.late.length ? <ul>{stats.people.late.map((person) => <li key={person.id}><strong>{person.name}</strong><span>Entrada: {person.entryTime} · Prevista: {person.scheduledStart}</span></li>)}</ul> : <p>Nenhum atraso registrado hoje.</p>
+              ) : peopleDialog === 'missing' ? (
+                stats.people.missing.length ? <ul>{stats.people.missing.map((person) => <li key={person.id}>{person.name}</li>)}</ul> : <p>Todos os colaboradores têm uma entrada registrada hoje.</p>
               ) : null}
               {peopleDialog === 'present' || peopleDialog === 'late' ? <p className="subtle">Inclui marcações pendentes; rejeitadas não são consideradas.</p> : null}
+              {peopleDialog === 'missing' ? <p className="subtle">Colaboradores sem entrada válida registrada hoje. Isso não confirma uma falta: confira a jornada, férias, licenças e possíveis justificativas.</p> : null}
             </dialog>
 
             <div className="content-grid">
@@ -1646,10 +1653,6 @@ export default function DashboardPage() {
                   <div className="mini-box">
                     <span className="subtle">Equipe ativa</span>
                     <strong>{todayLoadError ? '—' : stats.activeTeam}</strong>
-                  </div>
-                  <div className="mini-box">
-                    <span className="subtle">Faltas</span>
-                    <strong>{todayLoadError ? '—' : stats.missing}</strong>
                   </div>
                   <div className="mini-box">
                     <span className="subtle">Departamentos</span>

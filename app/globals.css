@@ -170,7 +170,7 @@ main {
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 18px;
   margin-bottom: 22px;
 }
@@ -181,6 +181,12 @@ main {
   border-radius: 20px;
   box-shadow: var(--shadow);
   padding: 18px;
+}
+
+@media (min-width: 981px) and (max-width: 1100px) {
+  .stat-card {
+    padding: 14px;
+  }
 }
 
 .stat-card-button {

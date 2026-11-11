@@ -19,5 +19,6 @@ export function dashboardPeople<T extends Employee>(employees: T[], entries: Ent
       ? [{ ...employee, scheduledStart }]
       : [];
   });
-  return { collaborators, present, late };
+  const missing = collaborators.filter((employee) => !firstEntries.has(employee.id));
+  return { collaborators, present, late, missing };
 }
