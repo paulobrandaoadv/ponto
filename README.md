@@ -97,6 +97,8 @@ As marcações, consultas, relatórios e horas extras usam o fuso de Mato Grosso
 
 No perfil do funcionário, o total de horas extras do mês atual inclui marcações confirmadas e pendentes e apresenta os dias com horas extras e a quantidade calculada em cada dia.
 
+Na modalidade **Diarista**, o perfil mostra as horas trabalhadas em todo o histórico, em vez das horas extras mensais. O cálculo soma apenas jornadas completas com entrada, saída para intervalo, retorno e saída final, descontando o intervalo. A jornada pode terminar no dia seguinte e deve ser concluída em até 48 horas após a entrada. Marcações pendentes são incluídas; rejeitadas são desconsideradas. Jornadas incompletas, inconsistentes ou que ultrapassem 48 horas não são somadas e devem ser revisadas. A data exibida corresponde ao dia da entrada.
+
 Se o funcionário esquecer a senha, um administrador ou gestor pode abrir **Funcionários → Redefinir senha**, definir uma senha temporária e entregá-la em particular. A alteração é registrada na auditoria; por segurança, a senha não é exibida novamente nem enviada por e-mail.
 
 Para remover um funcionário da equipe ativa sem perder o histórico, use **Arquivar funcionário**. O acesso vinculado é desativado e as marcações são preservadas para relatórios. Um funcionário arquivado pode ser restaurado pela mesma tela; isso reativa o perfil de acesso.

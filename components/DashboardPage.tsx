@@ -23,6 +23,7 @@ import {
 } from '@/lib/attendance-time';
 import { supabase } from '@/lib/supabase';
 import { cpfDigits, cpfSearchPattern, displayCpf, formatCpfInput, sameCpf } from '@/lib/cpf';
+import { calculateWorkedHours } from '@/lib/attendance-worked';
 
 type Employee = {
   id: string;
@@ -34,6 +35,7 @@ type Employee = {
   role: string;
   shift: string;
   saturdayUntilNoon: boolean;
+  modalidade: 'mensalista' | 'diarista';
   status: string;
 };
 
@@ -183,8 +185,11 @@ export default function DashboardPage() {
   );
   const totalMonthlyOvertimeMinutes =
     monthlyOvertime.confirmedMinutes + monthlyOvertime.pendingMinutes;
+  const isDailyWorker = employees[0]?.modalidade === 'diarista';
+  const workedHours = useMemo(() => calculateWorkedHours(monthlyOvertimePunches), [monthlyOvertimePunches]);
   const scheduleDefaults = parseWorkSchedule(editingEmployee?.shift) || DEFAULT_WORK_SCHEDULE;
   const nextEmployeeEvent = useMemo(() => {
+    if (isDailyWorker) return workedHours.nextEvent;
     const todayEntries = attendance
       .filter((entry) => entry.date === localDate(new Date()) && entry.status !== 'rejected')
       .sort((left, right) => left.time.localeCompare(right.time));
@@ -194,7 +199,7 @@ export default function DashboardPage() {
     if (lastEvent === 'saida_almoco') return 'retorno_almoco';
     if (lastEvent === 'retorno_almoco') return 'saida';
     return null;
-  }, [attendance]);
+  }, [attendance, isDailyWorker, workedHours]);
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -275,7 +280,7 @@ export default function DashboardPage() {
       const [employeesResult, departmentsResult, attendanceResult] = await Promise.all([
         supabase
           .from('employees')
-          .select('id, codigo_registro, nome, cpf, user_id, departamento_id, cargo, jornada, sabado_ate_meio_dia, status')
+          .select('id, codigo_registro, nome, cpf, user_id, departamento_id, cargo, jornada, sabado_ate_meio_dia, modalidade, status')
           .eq('company_id', profile.company_id)
           .order('nome'),
         supabase
@@ -336,6 +341,7 @@ export default function DashboardPage() {
         role: employee.cargo || '',
         shift: normalizeShift(employee.jornada),
         saturdayUntilNoon: Boolean(employee.sabado_ate_meio_dia),
+        modalidade: employee.modalidade === 'diarista' ? 'diarista' as const : 'mensalista' as const,
         status: normalizeEmployeeStatus(employee.status),
       }));
       const employeeNames = new Map(loadedEmployees.map((employee) => [employee.id, employee.name]));
@@ -343,35 +349,45 @@ export default function DashboardPage() {
       setOvertimeLoadError('');
       setMonthlyOvertimePunches([]);
       if (profile.role === 'funcionario' && loadedEmployees[0]) {
-        let monthRange: { start: string; end: string };
+        let monthRange: { start: string; end: string } | null = null;
         try {
-          monthRange = attendanceMonthRange(new Date());
+          if (loadedEmployees[0].modalidade !== 'diarista') monthRange = attendanceMonthRange(new Date());
         } catch (error) {
           setOvertimeLoadError(
             error instanceof Error ? error.message : 'Não foi possível determinar o período das horas extras.',
           );
-          monthRange = { start: '', end: '' };
+          setLoading(false);
+          return;
         }
 
-        if (monthRange.start && monthRange.end) {
-          const { data: overtimeRecords, error: overtimeError } = await supabase
+        const allRecords: OvertimePunch[] = [];
+        const pageSize = 500;
+        let offset = 0;
+        while (true) {
+          let query = supabase
             .from('attendance_records')
             .select('event_type, recorded_at, status')
             .eq('company_id', profile.company_id)
-            .eq('employee_id', loadedEmployees[0].id)
-            .gte('recorded_at', monthRange.start)
-            .lt('recorded_at', monthRange.end)
-            .order('recorded_at', { ascending: true });
-
+            .eq('employee_id', loadedEmployees[0].id);
+          if (monthRange) query = query.gte('recorded_at', monthRange.start).lt('recorded_at', monthRange.end);
+          const { data: overtimeRecords, error: overtimeError } = await query
+            .order('recorded_at', { ascending: true })
+            .order('id', { ascending: true })
+            .range(offset, offset + pageSize - 1);
           if (overtimeError) {
-            setOvertimeLoadError(`Não foi possível carregar as horas extras: ${overtimeError.message}`);
-          } else {
-            setMonthlyOvertimePunches((overtimeRecords || []).map((record) => ({
+            setOvertimeLoadError(`Não foi possível carregar as marcações para o cálculo de horas: ${overtimeError.message}`);
+            break;
+          }
+          allRecords.push(...(overtimeRecords || []).map((record) => ({
               type: record.event_type,
               recordedAt: record.recorded_at,
               status: record.status,
-            })));
+          })));
+          if (!overtimeRecords || overtimeRecords.length < pageSize) {
+            setMonthlyOvertimePunches(allRecords);
+            break;
           }
+          offset += pageSize;
         }
       }
 
@@ -578,6 +594,7 @@ export default function DashboardPage() {
     const role = String(formData.get('role') || '').trim();
     const flexibleSchedule = formData.get('flexibleSchedule') === 'on';
     const saturdayUntilNoon = formData.get('saturdayUntilNoon') === 'on';
+    const modalidade = String(formData.get('modalidade') || '');
     const schedule: WorkSchedule = {
       start: String(formData.get('workStart') || ''),
       lunchStart: String(formData.get('lunchStart') || ''),
@@ -591,6 +608,10 @@ export default function DashboardPage() {
     const accountPassword = String(formData.get('accountPassword') || '');
 
     if (!supabase || !companyId || !name || !cpf || !department || !role) return;
+    if (modalidade !== 'mensalista' && modalidade !== 'diarista') {
+      setErrorMessage('Selecione uma modalidade válida para o funcionário.');
+      return;
+    }
     if (!flexibleSchedule && !isValidWorkSchedule(schedule)) {
       setErrorMessage('Confira os horários: entrada, saída para almoço, retorno do almoço e saída devem estar em ordem.');
       return;
@@ -659,6 +680,7 @@ export default function DashboardPage() {
             jobTitle: role,
             shift,
             saturdayUntilNoon,
+            modalidade,
             status,
           }),
         });
@@ -688,6 +710,7 @@ export default function DashboardPage() {
           role,
           shift,
           saturdayUntilNoon,
+          modalidade,
           status,
         },
       ]);
@@ -733,6 +756,7 @@ export default function DashboardPage() {
       cargo: role,
       jornada: shift,
       sabado_ate_meio_dia: saturdayUntilNoon,
+      modalidade,
       situacao: status === 'Arquivado' ? 'inativo' : status.toLowerCase(),
       status: status === 'Arquivado' ? 'Inativo' : status,
     };
@@ -757,7 +781,7 @@ export default function DashboardPage() {
       return;
     }
 
-    const savedEmployee = {
+    const savedEmployee: Employee = {
       id: employeeRecord.id,
       registrationCode: editingEmployee?.registrationCode || '',
       name,
@@ -767,6 +791,7 @@ export default function DashboardPage() {
       role,
       shift,
       saturdayUntilNoon,
+      modalidade,
       status: normalizeEmployeeStatus(status),
     };
     setEmployees((current) =>
@@ -889,8 +914,10 @@ export default function DashboardPage() {
     const notes = String(formData.get('notes') || '').trim();
 
     if (isEmployee) {
-      if (!nextEmployeeEvent) {
-        setErrorMessage('Você já registrou os quatro pontos previstos para hoje.');
+      if (!nextEmployeeEvent || (isDailyWorker && overtimeLoadError)) {
+        setErrorMessage(isDailyWorker
+          ? 'Não foi possível continuar a jornada. Solicite a revisão das marcações ao administrador.'
+          : 'Você já registrou os quatro pontos previstos para hoje.');
         return;
       }
 
@@ -949,7 +976,7 @@ export default function DashboardPage() {
         },
         ...current,
       ]);
-      if (localDate(recordedAt).slice(0, 7) === localDate(new Date()).slice(0, 7)) {
+      if (isDailyWorker || localDate(recordedAt).slice(0, 7) === localDate(new Date()).slice(0, 7)) {
         setMonthlyOvertimePunches((current) => [
           ...current,
           {
@@ -1482,9 +1509,9 @@ export default function DashboardPage() {
         {isEmployee ? (
           <div className="panel employee-overtime-panel">
             <div className="employee-overtime-heading">
-              <h3>Total de horas extras</h3>
+              <h3>{isDailyWorker ? 'Total de horas trabalhadas' : 'Total de horas extras'}</h3>
               <span>
-                {new Date().toLocaleDateString('pt-BR', {
+                {isDailyWorker ? 'Todo o histórico' : new Date().toLocaleDateString('pt-BR', {
                   month: 'long',
                   year: 'numeric',
                   timeZone: ATTENDANCE_TIME_ZONE,
@@ -1496,13 +1523,13 @@ export default function DashboardPage() {
             ) : (
               <>
                 <strong className="employee-overtime-total">
-                  {loading ? 'Carregando...' : formatOvertimeMinutes(totalMonthlyOvertimeMinutes)}
+                  {loading ? 'Carregando...' : formatOvertimeMinutes(isDailyWorker ? workedHours.totalMinutes : totalMonthlyOvertimeMinutes)}
                 </strong>
-                {!loading && monthlyOvertime.days.length > 0 ? (
+                {!loading && (isDailyWorker ? workedHours.days : monthlyOvertime.days).length > 0 ? (
                   <div className="employee-overtime-days">
-                    <h4>Horas extras por dia</h4>
+                    <h4>{isDailyWorker ? 'Horas trabalhadas por dia de entrada' : 'Horas extras por dia'}</h4>
                     <ul>
-                      {monthlyOvertime.days.map((day) => (
+                      {(isDailyWorker ? workedHours.days : monthlyOvertime.days).map((day) => (
                         <li key={day.date}>
                           <time dateTime={day.date}>{day.date.split('-').reverse().join('/')}</time>
                           <strong>{formatOvertimeMinutes(day.minutes)}</strong>
@@ -1511,6 +1538,12 @@ export default function DashboardPage() {
                     </ul>
                     <p>O total inclui marcações pendentes de revisão.</p>
                   </div>
+                ) : null}
+                {!loading && isDailyWorker && workedHours.incomplete > 0 ? (
+                  <p className="employee-overtime-error">Há marcações incompletas ou inconsistentes que não foram somadas. Solicite a revisão ao administrador.</p>
+                ) : null}
+                {!loading && isDailyWorker && workedHours.inProgress ? (
+                  <p className="subtle">A jornada em andamento será somada após a saída final.</p>
                 ) : null}
               </>
             )}
@@ -1609,7 +1642,7 @@ export default function DashboardPage() {
                       </div>
                       <div className="field full">
                         <label>Próxima marcação</label>
-                        <input value={nextEmployeeEvent ? displayEventType(nextEmployeeEvent) : 'Limite diário atingido'} readOnly />
+                        <input value={nextEmployeeEvent ? displayEventType(nextEmployeeEvent) : isDailyWorker ? 'Jornada precisa de revisão' : 'Limite diário atingido'} readOnly />
                       </div>
                     </>
                   ) : (
@@ -1662,7 +1695,7 @@ export default function DashboardPage() {
                     <button
                       type="submit"
                       className="btn primary"
-                      disabled={saving || loading || employees.length === 0 || !nextEmployeeEvent}
+                      disabled={saving || loading || employees.length === 0 || !nextEmployeeEvent || Boolean(isDailyWorker && overtimeLoadError)}
                     >
                       {saving
                         ? 'Registrando...'
@@ -1790,6 +1823,14 @@ export default function DashboardPage() {
                   <div className="field">
                     <label htmlFor="role">Cargo</label>
                     <input id="role" name="role" type="text" defaultValue={editingEmployee?.role || ''} required />
+                  </div>
+
+                  <div className="field full">
+                    <label htmlFor="modalidade">Modalidade de trabalho</label>
+                    <select id="modalidade" name="modalidade" defaultValue={editingEmployee?.modalidade || 'mensalista'}>
+                      <option value="mensalista">Mensalista — horas extras do mês</option>
+                      <option value="diarista">Diarista — total de horas trabalhadas</option>
+                    </select>
                   </div>
 
                   <div className="field full">

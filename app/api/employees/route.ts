@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
     !('jobTitle' in body) ||
     !('shift' in body) ||
     !('saturdayUntilNoon' in body) ||
+    !('modalidade' in body) ||
     !('status' in body) ||
     typeof body.name !== 'string' ||
     typeof body.email !== 'string' ||
@@ -43,6 +44,7 @@ export async function POST(request: NextRequest) {
     typeof body.jobTitle !== 'string' ||
     typeof body.shift !== 'string' ||
     typeof body.saturdayUntilNoon !== 'boolean' ||
+    typeof body.modalidade !== 'string' ||
     typeof body.status !== 'string'
   ) {
     return NextResponse.json({ error: 'Preencha todos os dados do funcionário e da conta.' }, { status: 400 });
@@ -70,7 +72,8 @@ export async function POST(request: NextRequest) {
     jobTitle.length > 100 ||
     !shift ||
     shift.length > 50 ||
-    !['Ativo', 'Férias', 'Licença'].includes(status)
+    !['Ativo', 'Férias', 'Licença'].includes(status) ||
+    !['mensalista', 'diarista'].includes(body.modalidade)
   ) {
     return NextResponse.json({ error: 'Confira os dados. A senha deve ter entre 8 e 72 caracteres.' }, { status: 400 });
   }
@@ -159,6 +162,7 @@ export async function POST(request: NextRequest) {
       p_shift: shift,
       p_saturday_until_noon: body.saturdayUntilNoon,
       p_status: status,
+      p_modalidade: body.modalidade,
     },
   );
 
