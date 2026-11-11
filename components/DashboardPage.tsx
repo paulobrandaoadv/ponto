@@ -105,25 +105,6 @@ const displayShift = (shift: string) => {
     : shift;
 };
 
-const attendanceMonthRange = (date: Date) => {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: ATTENDANCE_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-  }).formatToParts(date);
-  const year = parts.find((part) => part.type === 'year')?.value;
-  const month = parts.find((part) => part.type === 'month')?.value;
-  if (!year || !month) throw new Error('Não foi possível determinar o mês atual.');
-  const numericYear = Number(year);
-  const numericMonth = Number(month);
-  const nextMonthYear = numericMonth === 12 ? numericYear + 1 : numericYear;
-  const nextMonth = numericMonth === 12 ? 1 : numericMonth + 1;
-  return {
-    start: attendanceDateTimeToIso(`${year}-${month}-01`),
-    end: attendanceDateTimeToIso(`${nextMonthYear}-${String(nextMonth).padStart(2, '0')}-01`),
-  };
-};
-
 const normalizeEmployeeStatus = (status: string) => {
   const normalized = status.toLowerCase();
   if (normalized === 'ativo') return 'Ativo';
@@ -179,31 +160,25 @@ export default function DashboardPage() {
     () => parseWorkSchedule(employees[0]?.shift),
     [employees],
   );
-  const monthlyOvertime = useMemo(
-    () => calculateMonthlyOvertime(
-      monthlyOvertimePunches,
-      employeeOvertimeSchedule,
-      employees[0]?.saturdayUntilNoon || false,
-    ),
-    [monthlyOvertimePunches, employeeOvertimeSchedule, employees],
-  );
+  const overtimeCalculation = useMemo(() => {
+    try {
+      return { result: calculateMonthlyOvertime(
+        monthlyOvertimePunches,
+        employeeOvertimeSchedule,
+        employees[0]?.saturdayUntilNoon || false,
+        localDate(new Date()).slice(0, 7),
+      ), error: '' };
+    } catch (error) {
+      return { result: null, error: error instanceof Error ? error.message : 'Não foi possível calcular as horas extras.' };
+    }
+  }, [monthlyOvertimePunches, employeeOvertimeSchedule, employees]);
+  const monthlyOvertime = overtimeCalculation.result;
   const totalMonthlyOvertimeMinutes =
-    monthlyOvertime.confirmedMinutes + monthlyOvertime.pendingMinutes;
+    monthlyOvertime ? monthlyOvertime.confirmedMinutes + monthlyOvertime.pendingMinutes : 0;
   const isDailyWorker = employees[0]?.modalidade === 'diarista';
   const workedHours = useMemo(() => calculateWorkedHours(monthlyOvertimePunches), [monthlyOvertimePunches]);
   const scheduleDefaults = parseWorkSchedule(editingEmployee?.shift) || DEFAULT_WORK_SCHEDULE;
-  const nextEmployeeEvent = useMemo(() => {
-    if (isDailyWorker) return workedHours.nextEvent;
-    const todayEntries = attendance
-      .filter((entry) => entry.date === localDate(new Date()) && entry.status !== 'rejected')
-      .sort((left, right) => left.time.localeCompare(right.time));
-    const lastEvent = todayEntries[todayEntries.length - 1]?.type;
-    if (!lastEvent) return 'entrada';
-    if (lastEvent === 'entrada') return 'saida_almoco';
-    if (lastEvent === 'saida_almoco') return 'retorno_almoco';
-    if (lastEvent === 'retorno_almoco') return 'saida';
-    return null;
-  }, [attendance, isDailyWorker, workedHours]);
+  const nextEmployeeEvent = workedHours.nextEvent;
 
   useEffect(() => {
     const dialog = peopleDialogRef.current;
@@ -385,27 +360,15 @@ export default function DashboardPage() {
       setOvertimeLoadError('');
       setMonthlyOvertimePunches([]);
       if (profile.role === 'funcionario' && loadedEmployees[0]) {
-        let monthRange: { start: string; end: string } | null = null;
-        try {
-          if (loadedEmployees[0].modalidade !== 'diarista') monthRange = attendanceMonthRange(new Date());
-        } catch (error) {
-          setOvertimeLoadError(
-            error instanceof Error ? error.message : 'Não foi possível determinar o período das horas extras.',
-          );
-          setLoading(false);
-          return;
-        }
-
         const allRecords: OvertimePunch[] = [];
         const pageSize = 500;
         let offset = 0;
         while (true) {
-          let query = supabase
+          const query = supabase
             .from('attendance_records')
             .select('event_type, recorded_at, status')
             .eq('company_id', profile.company_id)
             .eq('employee_id', loadedEmployees[0].id);
-          if (monthRange) query = query.gte('recorded_at', monthRange.start).lt('recorded_at', monthRange.end);
           const { data: overtimeRecords, error: overtimeError } = await query
             .order('recorded_at', { ascending: true })
             .order('id', { ascending: true })
@@ -942,10 +905,8 @@ export default function DashboardPage() {
     const notes = String(formData.get('notes') || '').trim();
 
     if (isEmployee) {
-      if (!nextEmployeeEvent || (isDailyWorker && overtimeLoadError)) {
-        setErrorMessage(isDailyWorker
-          ? 'Não foi possível continuar a jornada. Solicite a revisão das marcações ao administrador.'
-          : 'Você já registrou os quatro pontos previstos para hoje.');
+      if (!nextEmployeeEvent || overtimeLoadError) {
+        setErrorMessage('Não foi possível continuar a jornada. Solicite a revisão das marcações ao administrador.');
         return;
       }
 
@@ -1004,16 +965,14 @@ export default function DashboardPage() {
         },
         ...current,
       ]);
-      if (isDailyWorker || localDate(recordedAt).slice(0, 7) === localDate(new Date()).slice(0, 7)) {
-        setMonthlyOvertimePunches((current) => [
-          ...current,
-          {
-            type: savedPunch.event_type,
-            recordedAt: savedPunch.recorded_at,
-            status: savedPunch.status,
-          },
-        ]);
-      }
+      setMonthlyOvertimePunches((current) => [
+        ...current,
+        {
+          type: savedPunch.event_type,
+          recordedAt: savedPunch.recorded_at,
+          status: savedPunch.status,
+        },
+      ]);
       setMessage(
         `${displayEventType(savedPunch.event_type)} registrada às ${localTime(recordedAt)} (horário de Mato Grosso do Sul), com localização GPS (precisão aproximada de ${Math.round(locationSnapshot.accuracy)} m) e enviada para revisão.`,
       );
@@ -1551,18 +1510,18 @@ export default function DashboardPage() {
                 })}
               </span>
             </div>
-            {overtimeLoadError ? (
-              <p role="alert" className="employee-overtime-error">{overtimeLoadError}</p>
+            {overtimeLoadError || (!isDailyWorker && overtimeCalculation.error) ? (
+              <p role="alert" className="employee-overtime-error">{overtimeLoadError || overtimeCalculation.error}</p>
             ) : (
               <>
                 <strong className="employee-overtime-total">
                   {loading ? 'Carregando...' : formatOvertimeMinutes(isDailyWorker ? workedHours.totalMinutes : totalMonthlyOvertimeMinutes)}
                 </strong>
-                {!loading && (isDailyWorker ? workedHours.days : monthlyOvertime.days).length > 0 ? (
+                {!loading && (isDailyWorker ? workedHours.days : monthlyOvertime?.days || []).length > 0 ? (
                   <div className="employee-overtime-days">
                     <h4>{isDailyWorker ? 'Horas trabalhadas por dia de entrada' : 'Horas extras por dia'}</h4>
                     <ul>
-                      {(isDailyWorker ? workedHours.days : monthlyOvertime.days).map((day) => (
+                      {(isDailyWorker ? workedHours.days : monthlyOvertime?.days || []).map((day) => (
                         <li key={day.date}>
                           <time dateTime={day.date}>{day.date.split('-').reverse().join('/')}</time>
                           <strong>{formatOvertimeMinutes(day.minutes)}</strong>
@@ -1572,10 +1531,10 @@ export default function DashboardPage() {
                     <p>O total inclui marcações pendentes de revisão.</p>
                   </div>
                 ) : null}
-                {!loading && isDailyWorker && workedHours.incomplete > 0 ? (
+                {!loading && workedHours.incomplete > 0 ? (
                   <p className="employee-overtime-error">Há marcações incompletas ou inconsistentes que não foram somadas. Solicite a revisão ao administrador.</p>
                 ) : null}
-                {!loading && isDailyWorker && workedHours.inProgress ? (
+                {!loading && workedHours.inProgress ? (
                   <p className="subtle">A jornada em andamento será somada após a saída final.</p>
                 ) : null}
               </>
@@ -1695,7 +1654,7 @@ export default function DashboardPage() {
                       </div>
                       <div className="field full">
                         <label>Próxima marcação</label>
-                        <input value={nextEmployeeEvent ? displayEventType(nextEmployeeEvent) : isDailyWorker ? 'Jornada precisa de revisão' : 'Limite diário atingido'} readOnly />
+                        <input value={nextEmployeeEvent ? displayEventType(nextEmployeeEvent) : 'Jornada precisa de revisão'} readOnly />
                       </div>
                     </>
                   ) : (
@@ -1748,13 +1707,13 @@ export default function DashboardPage() {
                     <button
                       type="submit"
                       className="btn primary"
-                      disabled={saving || loading || employees.length === 0 || !nextEmployeeEvent || Boolean(isDailyWorker && overtimeLoadError)}
+                      disabled={saving || loading || employees.length === 0 || !nextEmployeeEvent || Boolean(overtimeLoadError)}
                     >
                       {saving
                         ? 'Registrando...'
                         : nextEmployeeEvent
                           ? `Registrar ${displayEventType(nextEmployeeEvent).toLowerCase()}`
-                          : isDailyWorker ? 'Jornada precisa de revisão' : 'Limite diário atingido'}
+                          : 'Jornada precisa de revisão'}
                     </button>
                   ) : (
                     <>
@@ -1889,7 +1848,7 @@ export default function DashboardPage() {
                   <div className="field full">
                     <label>Jornada normal do funcionário</label>
                     <p className="subtle" style={{ margin: '0 0 8px' }}>
-                      Configure os quatro horários. As horas extras são calculadas depois do horário normal de saída.
+                      Configure os quatro horários. Em dias úteis, as horas extras são calculadas pelo tempo trabalhado além da duração da jornada normal.
                     </p>
                     <div className="form-grid">
                       <div className="field">
@@ -1916,7 +1875,7 @@ export default function DashboardPage() {
                         defaultChecked={Boolean(editingEmployee && /flex/i.test(editingEmployee.shift))}
                         style={{ width: 18, height: 18 }}
                       />
-                      Jornada flexível (sem cálculo automático de horas extras)
+                      Jornada flexível (referência de 9 horas por jornada em dias úteis)
                     </label>
                   </div>
 

@@ -422,7 +422,6 @@ begin
 
   perform pg_advisory_xact_lock(hashtextextended(current_employee.id::text, 0));
 
-  if current_employee.modalidade = 'diarista' then
     select event_type into last_event
     from public.attendance_records
     where employee_id = current_employee.id and status <> 'rejected'
@@ -452,17 +451,6 @@ begin
     else
       last_event := null;
     end if;
-  else
-    select event_type into last_event
-    from public.attendance_records
-    where employee_id = current_employee.id
-      and (recorded_at at time zone 'America/Campo_Grande')::date =
-          (local_now at time zone 'America/Campo_Grande')::date
-      and status <> 'rejected'
-    order by recorded_at desc
-    limit 1;
-  end if;
-
   next_event := case
     when last_event is null then 'entrada'
     when last_event = 'entrada' then 'saida_almoco'

@@ -64,6 +64,8 @@ Se já executou `secure_rls.sql` antes, execute-o novamente após atualizar o ar
 
 Para atualizar um banco já configurado para a modalidade diarista, execute `supabase/diaristas.sql` no SQL Editor antes de publicar a nova versão da aplicação. Esse script preserva a função anterior de cadastro e acrescenta a versão que recebe a modalidade.
 
+Para permitir jornadas de mensalistas através da meia-noite, execute `supabase/jornadas_noturnas.sql` no SQL Editor imediatamente antes de publicar a versão correspondente da aplicação. A alteração muda a sequência de marcações de todos os funcionários.
+
 O perfil autenticado precisa ter `company_id` preenchido e `role` igual a `admin` ou `gestor` para usar o painel.
 O navegador usa a chave pública (anon/publishable) com a sessão do usuário e as políticas RLS. O endpoint de login por nome precisa da chave `service_role` exclusivamente no servidor para resolver o nome para o usuário Auth; a chave nunca é enviada ao navegador.
 Configure `SUPABASE_SERVICE_ROLE_KEY` em `.env.local` e no ambiente privado de produção. Nunca use o prefixo `NEXT_PUBLIC_` nessa variável, não a compartilhe e não a coloque no código cliente.
@@ -95,11 +97,11 @@ O campo CPF acrescenta pontos e traço durante a digitação. CPFs já cadastrad
 
 Administradores ativos podem cadastrar outros administradores pelo item **Administradores** no painel. Cada novo administrador recebe acesso completo somente à empresa do administrador que o cadastrou. Gestores não podem criar contas administrativas. A senha inicial deve ser entregue em particular; o novo administrador pode entrar com seu e-mail e senha.
 
-Cadastros antigos sem conta podem continuar usando **Vincular login** após criar sua conta em **Authentication → Users**. O funcionário verá apenas **Meu ponto**. A função `record_own_attendance` registra o horário do servidor, aplica a sequência diária de quatro marcações e não aceita horário enviado pelo navegador. Marcações rejeitadas aparecem no histórico, mas não avançam a sequência; o funcionário pode refazer aquela etapa.
+Cadastros antigos sem conta podem continuar usando **Vincular login** após criar sua conta em **Authentication → Users**. O funcionário verá apenas **Meu ponto**. A função `record_own_attendance` registra o horário do servidor, aplica a sequência de quatro marcações por jornada e não aceita horário enviado pelo navegador. Marcações rejeitadas aparecem no histórico, mas não avançam a sequência; o funcionário pode refazer aquela etapa.
 
 As marcações, consultas, relatórios e horas extras usam o fuso de Mato Grosso do Sul (`America/Campo_Grande`), independentemente do fuso configurado no aparelho. A marcação própria usa o horário do servidor; os horários digitados pelo administrador são interpretados nesse mesmo fuso. A mudança não altera automaticamente registros antigos.
 
-No perfil do funcionário, o total de horas extras do mês atual inclui marcações confirmadas e pendentes e apresenta os dias com horas extras e a quantidade calculada em cada dia.
+No perfil do mensalista, o total de horas extras do mês atual considera jornadas completas pela data de entrada, inclusive jornadas terminadas no mês seguinte. Em dias úteis, desconta-se o intervalo registrado e a duração da jornada normal do tempo trabalhado em cada jornada. Para jornada flexível, usam-se 9 horas como referência. No domingo ou no sábado de quem não trabalha nesse dia, todo o tempo trabalhado é extra; no sábado de quem trabalha até 12h, conta-se apenas o trabalho após as 12h. Aplica-se a regra do dia da entrada a toda a jornada. O cálculo inclui marcações pendentes, desconsidera rejeitadas e não soma jornadas incompletas ou com mais de 48 horas. Essa regra também se aplica ao histórico.
 
 Na modalidade **Diarista**, o perfil mostra as horas trabalhadas em todo o histórico, em vez das horas extras mensais. O cálculo soma apenas jornadas completas com entrada, saída para intervalo, retorno e saída final, descontando o intervalo. A jornada pode terminar no dia seguinte e deve ser concluída em até 48 horas após a entrada. Marcações pendentes são incluídas; rejeitadas são desconsideradas. Jornadas incompletas, inconsistentes ou que ultrapassem 48 horas não são somadas e devem ser revisadas. A data exibida corresponde ao dia da entrada.
 
