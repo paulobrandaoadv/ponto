@@ -633,6 +633,42 @@ th {
     padding: 0.3rem 0.5rem;
     font-size: 0.72rem;
   }
+
+  .review-table-wrap table {
+    table-layout: fixed;
+  }
+
+  .review-table-wrap th,
+  .review-table-wrap td {
+    padding: 10px 5px;
+    font-size: 0.8rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .review-table-wrap th:nth-child(1) { width: 14%; }
+  .review-table-wrap th:nth-child(2) { width: 12%; }
+  .review-table-wrap th:nth-child(3) { width: 7%; }
+  .review-table-wrap th:nth-child(4) { width: 11%; }
+  .review-table-wrap th:nth-child(5) { width: 8%; }
+  .review-table-wrap th:nth-child(6) { width: 18%; }
+  .review-table-wrap th:nth-child(7) { width: 15%; }
+  .review-table-wrap th:nth-child(8) { width: 15%; }
+
+  .review-table-wrap td:nth-child(2),
+  .review-table-wrap td:nth-child(3) {
+    white-space: nowrap;
+    font-size: 0.75rem;
+  }
+
+  .review-table-wrap .review-actions {
+    flex-wrap: wrap;
+  }
+
+  .review-table-wrap .review-actions .btn {
+    padding: 0.5rem 0.6rem;
+    font-size: 0.75rem;
+  }
 }
 
 .empty {

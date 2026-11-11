@@ -2201,7 +2201,7 @@ export default function DashboardPage() {
             <p className="subtle">
               A revisão altera apenas o status. Data, hora, tipo e demais dados da marcação permanecem preservados.
             </p>
-            <div className="table-wrap employees-table-wrap">
+            <div className="table-wrap review-table-wrap">
               <table>
                 <thead>
                   <tr>
@@ -2232,7 +2232,7 @@ export default function DashboardPage() {
                       </td>
                       <td>{entry.notes || '—'}</td>
                       <td>
-                        <div style={{ display: 'flex', gap: 8 }}>
+                        <div className="review-actions" style={{ display: 'flex', gap: 8 }}>
                           <button
                             type="button"
                             className="btn primary"
