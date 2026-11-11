@@ -105,6 +105,8 @@ No perfil do mensalista, o total de horas extras do mês atual considera jornada
 
 Na modalidade **Diarista**, o perfil mostra como **horas extras** todo o período trabalhado no histórico, descontando apenas o intervalo. O cálculo soma apenas jornadas completas com entrada, saída para intervalo, retorno e saída final. A jornada pode terminar no dia seguinte e deve ser concluída em até 48 horas após a entrada. Marcações pendentes são incluídas; rejeitadas são desconsideradas. Jornadas incompletas, inconsistentes ou que ultrapassem 48 horas não são somadas e devem ser revisadas. A data exibida corresponde ao dia da entrada.
 
+Nos relatórios de administradores e gestores, a consulta por período mostra o total de horas extras, os totais por funcionário e por dia de entrada, e quanto depende de marcações pendentes. Utiliza as mesmas regras dos perfis para mensalistas e diaristas, inclusive jornadas encerradas depois do período consultado. A exportação CSV existente contém as marcações do período.
+
 Se o funcionário esquecer a senha, um administrador ou gestor pode abrir **Funcionários → Redefinir senha**, definir uma senha temporária e entregá-la em particular. A alteração é registrada na auditoria; por segurança, a senha não é exibida novamente nem enviada por e-mail.
 
 Para remover um funcionário da equipe ativa sem perder o histórico, use **Arquivar funcionário**. O acesso vinculado é desativado e as marcações são preservadas para relatórios. Um funcionário arquivado pode ser restaurado pela mesma tela; isso reativa o perfil de acesso.

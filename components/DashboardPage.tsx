@@ -25,6 +25,7 @@ import { supabase } from '@/lib/supabase';
 import { cpfDigits, cpfSearchPattern, displayCpf, formatCpfInput, sameCpf } from '@/lib/cpf';
 import { calculateWorkedHours } from '@/lib/attendance-worked';
 import { dashboardPeople } from '@/lib/dashboard-people';
+import { calculateReportOvertime } from '@/lib/report-overtime';
 
 type Employee = {
   id: string;
@@ -147,6 +148,7 @@ export default function DashboardPage() {
   const [reportTo, setReportTo] = useState(() => localDate(new Date()));
   const [reportEmployeeId, setReportEmployeeId] = useState('');
   const [reportEntries, setReportEntries] = useState<AttendanceEntry[]>([]);
+  const [reportOvertime, setReportOvertime] = useState<ReturnType<typeof calculateReportOvertime>>([]);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportLoaded, setReportLoaded] = useState(false);
   const pendingAttendance = useMemo(
@@ -493,9 +495,10 @@ export default function DashboardPage() {
         .from('attendance_records')
         .select('id, employee_id, event_type, recorded_at, location, notes, status, latitude, longitude, accuracy')
         .eq('company_id', companyId)
-        .gte('recorded_at', startIso)
-        .lt('recorded_at', endIso)
-        .order('recorded_at', { ascending: true });
+        .gte('recorded_at', new Date(Date.parse(startIso) - 48 * 60 * 60 * 1000).toISOString())
+        .lt('recorded_at', new Date(Date.parse(endIso) + 48 * 60 * 60 * 1000).toISOString())
+        .order('recorded_at', { ascending: true })
+        .order('id', { ascending: true });
 
       if (reportEmployeeId) {
         query = query.eq('employee_id', reportEmployeeId);
@@ -514,9 +517,31 @@ export default function DashboardPage() {
       offset += pageSize;
     }
 
+    const reportEmployees = reportEmployeeId
+      ? employees.filter((employee) => employee.id === reportEmployeeId)
+      : employees;
+    try {
+      setReportOvertime(calculateReportOvertime(
+        reportEmployees,
+        records.map((record) => ({
+          employeeId: record.employee_id,
+          type: record.event_type,
+          recordedAt: record.recorded_at,
+          status: record.status,
+        })),
+        reportFrom,
+        reportTo,
+      ));
+    } catch (error) {
+      setErrorMessage(`Não foi possível calcular as horas extras do relatório: ${error instanceof Error ? error.message : 'Erro desconhecido.'}`);
+      setReportLoading(false);
+      return;
+    }
+
     const employeeNames = new Map(employees.map((employee) => [employee.id, employee.name]));
     setReportEntries(
-      records.map((record) => ({
+      records.filter((record) => Date.parse(record.recorded_at) >= Date.parse(startIso) &&
+        Date.parse(record.recorded_at) < Date.parse(endIso)).map((record) => ({
         id: record.id,
         employeeId: record.employee_id,
         employeeName: employeeNames.get(record.employee_id) || 'Funcionário',
@@ -2360,7 +2385,11 @@ export default function DashboardPage() {
                     id="reportFrom"
                     type="date"
                     value={reportFrom}
-                    onChange={(event) => setReportFrom(event.target.value)}
+                    disabled={reportLoading}
+                    onChange={(event) => {
+                      setReportFrom(event.target.value);
+                      setReportLoaded(false);
+                    }}
                     required
                   />
                 </div>
@@ -2370,7 +2399,11 @@ export default function DashboardPage() {
                     id="reportTo"
                     type="date"
                     value={reportTo}
-                    onChange={(event) => setReportTo(event.target.value)}
+                    disabled={reportLoading}
+                    onChange={(event) => {
+                      setReportTo(event.target.value);
+                      setReportLoaded(false);
+                    }}
                     required
                   />
                 </div>
@@ -2379,6 +2412,7 @@ export default function DashboardPage() {
                   <select
                     id="reportEmployee"
                     value={reportEmployeeId}
+                    disabled={reportLoading}
                     onChange={(event) => {
                       setReportEmployeeId(event.target.value);
                       setReportLoaded(false);
@@ -2408,6 +2442,38 @@ export default function DashboardPage() {
             </form>
 
             {reportLoaded ? (
+              <>
+              <div style={{ marginTop: 22 }}>
+                <h3>Horas extras no período</h3>
+                <p className="subtle">
+                  Total: <strong>{formatOvertimeMinutes(reportOvertime.reduce((total, item) => total + item.totalMinutes, 0))}</strong>.
+                  {' '}As jornadas são atribuídas ao dia da entrada, mesmo quando terminam depois do período.
+                  Marcações pendentes são incluídas; rejeitadas e jornadas incompletas ou com mais de 48 horas não são somadas.
+                  Revise eventuais marcações inconsistentes.
+                </p>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr><th>Funcionário</th><th>Total de horas extras</th><th>Inclui pendentes</th><th>Por dia de entrada</th></tr>
+                    </thead>
+                    <tbody>
+                      {reportOvertime.map((item) => (
+                        <tr key={item.employee.id}>
+                          <td>{item.employee.name}</td>
+                          <td>{formatOvertimeMinutes(item.totalMinutes)}</td>
+                          <td>{formatOvertimeMinutes(item.pendingMinutes)}</td>
+                          <td>{item.days.length
+                            ? item.days.map((day) => `${day.date.split('-').reverse().join('/')}: ${formatOvertimeMinutes(day.minutes)}`).join(' · ')
+                            : '—'}</td>
+                        </tr>
+                      ))}
+                      {reportOvertime.length === 0 ? (
+                        <tr><td colSpan={4} className="empty">Nenhum funcionário encontrado.</td></tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
               <div className="table-wrap" style={{ marginTop: 18 }}>
                 <table>
                   <thead>
@@ -2445,6 +2511,7 @@ export default function DashboardPage() {
                   </tbody>
                 </table>
               </div>
+              </>
             ) : null}
           </div>
         )}
