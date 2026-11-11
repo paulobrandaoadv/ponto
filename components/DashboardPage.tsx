@@ -1501,7 +1501,7 @@ export default function DashboardPage() {
         {isEmployee ? (
           <div className="panel employee-overtime-panel">
             <div className="employee-overtime-heading">
-              <h3>{isDailyWorker ? 'Total de horas trabalhadas' : 'Total de horas extras'}</h3>
+              <h3>Total de horas extras</h3>
               <span>
                 {isDailyWorker ? 'Todo o histórico' : new Date().toLocaleDateString('pt-BR', {
                   month: 'long',
@@ -1519,7 +1519,7 @@ export default function DashboardPage() {
                 </strong>
                 {!loading && (isDailyWorker ? workedHours.days : monthlyOvertime?.days || []).length > 0 ? (
                   <div className="employee-overtime-days">
-                    <h4>{isDailyWorker ? 'Horas trabalhadas por dia de entrada' : 'Horas extras por dia'}</h4>
+                    <h4>{isDailyWorker ? 'Horas extras por dia de entrada' : 'Horas extras por dia'}</h4>
                     <ul>
                       {(isDailyWorker ? workedHours.days : monthlyOvertime?.days || []).map((day) => (
                         <li key={day.date}>
@@ -1529,6 +1529,7 @@ export default function DashboardPage() {
                       ))}
                     </ul>
                     <p>O total inclui marcações pendentes de revisão.</p>
+                    {isDailyWorker ? <p>Para diaristas, são somadas todas as horas trabalhadas, descontando o intervalo.</p> : null}
                   </div>
                 ) : null}
                 {!loading && workedHours.incomplete > 0 ? (
@@ -1841,7 +1842,7 @@ export default function DashboardPage() {
                     <label htmlFor="modalidade">Modalidade de trabalho</label>
                     <select id="modalidade" name="modalidade" defaultValue={editingEmployee?.modalidade || 'mensalista'}>
                       <option value="mensalista">Mensalista — horas extras do mês</option>
-                      <option value="diarista">Diarista — total de horas trabalhadas</option>
+                      <option value="diarista">Diarista — horas extras de todo o período trabalhado</option>
                     </select>
                   </div>
 

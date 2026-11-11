@@ -34,6 +34,17 @@ test('calculates overnight shifts in full, subtracting the break and grouping by
   assert.equal(result.incomplete, 0);
 });
 
+test('counts the entire completed daytime shift minus lunch without subtracting a normal schedule', () => {
+  const result = calculateWorkedHours([
+    punch('entrada', '2026-11-11T11:08:50Z'),
+    punch('saida_almoco', '2026-11-11T15:51:07Z'),
+    punch('retorno_almoco', '2026-11-11T17:14:17Z'),
+    punch('saida', '2026-11-11T22:14:47Z'),
+  ], new Date('2026-11-12T00:00:00Z'));
+  assert.equal(result.totalMinutes, 582);
+  assert.deepEqual(plain(result.days), [{ date: '2026-11-11', minutes: 582 }]);
+});
+
 test('does not count incomplete, rejected, out-of-order or overlong shifts', () => {
   const result = calculateWorkedHours([
     punch('entrada', '2026-11-01T11:00:00Z'),
