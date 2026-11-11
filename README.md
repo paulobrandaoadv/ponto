@@ -62,6 +62,8 @@ No Supabase, abra **SQL Editor → New query** e execute primeiro `supabase/sche
 Em seguida, execute `supabase/secure_rls.sql` para instalar as políticas de acesso por empresa, as funções de marcação/revisão e a criação segura de funcionários com conta vinculada.
 Se já executou `secure_rls.sql` antes, execute-o novamente após atualizar o arquivo para instalar as funções atualizadas de reconhecimento facial e exclusão definitiva de funcionários. Esta versão também remove as tabelas e funções de passkey; o cadastro facial por câmera continua disponível.
 
+Para atualizar um banco já configurado para a modalidade diarista, execute `supabase/diaristas.sql` no SQL Editor antes de publicar a nova versão da aplicação. Esse script preserva a função anterior de cadastro e acrescenta a versão que recebe a modalidade.
+
 O perfil autenticado precisa ter `company_id` preenchido e `role` igual a `admin` ou `gestor` para usar o painel.
 O navegador usa a chave pública (anon/publishable) com a sessão do usuário e as políticas RLS. O endpoint de login por nome precisa da chave `service_role` exclusivamente no servidor para resolver o nome para o usuário Auth; a chave nunca é enviada ao navegador.
 Configure `SUPABASE_SERVICE_ROLE_KEY` em `.env.local` e no ambiente privado de produção. Nunca use o prefixo `NEXT_PUBLIC_` nessa variável, não a compartilhe e não a coloque no código cliente.

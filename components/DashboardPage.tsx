@@ -1701,7 +1701,7 @@ export default function DashboardPage() {
                         ? 'Registrando...'
                         : nextEmployeeEvent
                           ? `Registrar ${displayEventType(nextEmployeeEvent).toLowerCase()}`
-                          : 'Limite di?rio atingido'}
+                          : isDailyWorker ? 'Jornada precisa de revisão' : 'Limite diário atingido'}
                     </button>
                   ) : (
                     <>
