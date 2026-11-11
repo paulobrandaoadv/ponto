@@ -85,6 +85,8 @@ Configure `SUPABASE_SERVICE_ROLE_KEY` em `.env.local` e no ambiente privado de p
 - Marcação própria autenticada e marcação manual
 - Isolamento por empresa e autorização por função via RLS
 
+No dashboard, os cartões **Colaboradores**, **Presentes hoje** e **Atrasos** mostram os nomes ao serem selecionados. Presenças e atrasos consideram a primeira entrada não rejeitada de cada colaborador no dia, inclusive se estiver pendente; atrasos são comparados ao início da jornada cadastrada. Jornadas sem horário fixo não são classificadas como atraso.
+
 ## Acesso do funcionário
 
 Ao cadastrar um funcionário em **Funcionários**, informe o e-mail e a senha inicial. O sistema cria a conta no Supabase Auth, cadastra o funcionário, cria o perfil `funcionario`, atribui um código de registro `ANB-000001` e vincula tudo automaticamente. O código é sequencial e único no sistema. O e-mail é necessário internamente para a conta Supabase; o funcionário entra usando o nome cadastrado e a senha. Entregue a senha inicial ao funcionário de forma privada.

@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import FaceCamera from '@/components/FaceCamera';
@@ -24,6 +24,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { cpfDigits, cpfSearchPattern, displayCpf, formatCpfInput, sameCpf } from '@/lib/cpf';
 import { calculateWorkedHours } from '@/lib/attendance-worked';
+import { dashboardPeople } from '@/lib/dashboard-people';
 
 type Employee = {
   id: string;
@@ -153,6 +154,9 @@ export default function DashboardPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [todayLoadError, setTodayLoadError] = useState('');
+  const [peopleDialog, setPeopleDialog] = useState<'collaborators' | 'present' | 'late' | null>(null);
+  const peopleDialogRef = useRef<HTMLDialogElement>(null);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [linkingEmployeeId, setLinkingEmployeeId] = useState('');
   const [resettingPasswordEmployeeId, setResettingPasswordEmployeeId] = useState('');
@@ -200,6 +204,12 @@ export default function DashboardPage() {
     if (lastEvent === 'retorno_almoco') return 'saida';
     return null;
   }, [attendance, isDailyWorker, workedHours]);
+
+  useEffect(() => {
+    const dialog = peopleDialogRef.current;
+    if (peopleDialog && dialog && !dialog.open) dialog.showModal();
+    if (!peopleDialog && dialog?.open) dialog.close();
+  }, [peopleDialog]);
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -326,6 +336,32 @@ export default function DashboardPage() {
         pendingOffset += pendingPageSize;
       }
 
+      const todayRecords: typeof pendingRecords = [];
+      if (profile.role === 'admin' || profile.role === 'gestor') {
+        const today = localDate(new Date());
+        const start = attendanceDateTimeToIso(today);
+        const end = attendanceDateTimeToIso(nextAttendanceDate(today));
+        let offset = 0;
+        while (true) {
+          const { data: page, error: todayError } = await supabase
+            .from('attendance_records')
+            .select('id, employee_id, event_type, recorded_at, location, notes, status, latitude, longitude, accuracy')
+            .eq('company_id', profile.company_id)
+            .gte('recorded_at', start)
+            .lt('recorded_at', end)
+            .order('recorded_at', { ascending: false })
+            .order('id', { ascending: false })
+            .range(offset, offset + 499);
+          if (todayError) {
+            setTodayLoadError(`Não foi possível carregar todas as marcações de hoje: ${todayError.message}`);
+            break;
+          }
+          todayRecords.push(...(page || []));
+          if (!page || page.length < 500) break;
+          offset += 500;
+        }
+      }
+
       const departmentNames = new Map(
         (departmentsResult.data || []).map((department) => [department.id, department.nome]),
       );
@@ -393,7 +429,7 @@ export default function DashboardPage() {
 
       setEmployees(loadedEmployees);
       const attendanceById = new Map(
-        [...(attendanceResult.data || []), ...pendingRecords].map((record) => [record.id, record]),
+        [...(attendanceResult.data || []), ...pendingRecords, ...todayRecords].map((record) => [record.id, record]),
       );
       setAttendance(
         Array.from(attendanceById.values())
@@ -420,21 +456,12 @@ export default function DashboardPage() {
   }, [router]);
 
   const stats = useMemo(() => {
-    const activeEmployees = employees.filter((employee) => employee.status !== 'Arquivado');
+    const people = dashboardPeople(employees, attendance, localDate(new Date()));
+    const activeEmployees = people.collaborators;
     const activeEmployeeIds = new Set(activeEmployees.map((employee) => employee.id));
     const today = localDate(new Date());
-    const todaysEntries = attendance.filter((item) => item.date === today && item.status !== 'rejected');
-    const present = new Set(
-      todaysEntries
-        .filter((item) => item.type === 'entrada' && activeEmployeeIds.has(item.employeeId))
-        .map((item) => item.employeeId),
-    ).size;
-    const late = todaysEntries.filter((entry) => {
-      if (entry.type !== 'entrada' || !activeEmployeeIds.has(entry.employeeId)) return false;
-      const employee = employees.find((item) => item.id === entry.employeeId);
-      const scheduledStart = employee?.shift.match(/\d{2}:\d{2}/)?.[0];
-      return scheduledStart ? entry.time > scheduledStart : false;
-    }).length;
+    const present = people.present.length;
+    const late = people.late.length;
     const monthStart = `${today.slice(0, 7)}-01`;
     const monthlyEntries = attendance.filter((item) => item.date >= monthStart);
     const validMonthlyEntries = monthlyEntries.filter((item) => item.status !== 'rejected');
@@ -452,6 +479,7 @@ export default function DashboardPage() {
       activeTeam: present,
       missing: Math.max(0, activeEmployees.length - present),
       departmentCount: new Set(activeEmployees.map((employee) => employee.department)).size,
+      people,
     };
   }, [attendance, employees]);
 
@@ -1477,7 +1505,7 @@ export default function DashboardPage() {
 
         <div className="side-card">
           <h4>{isEmployee ? 'Registros hoje' : 'Equipe presente hoje'}</h4>
-          <strong>{isEmployee ? attendance.filter((entry) => entry.date === localDate(new Date()) && entry.status !== 'rejected').length : stats.activeTeam}</strong>
+          <strong>{isEmployee ? attendance.filter((entry) => entry.date === localDate(new Date()) && entry.status !== 'rejected').length : todayLoadError ? '—' : stats.activeTeam}</strong>
           <div className="subtle">{dateLabel}</div>
         </div>
       </aside>
@@ -1497,6 +1525,11 @@ export default function DashboardPage() {
         {errorMessage ? (
           <div className="panel" role="alert" style={{ marginBottom: 18, borderColor: '#d95a5a', color: '#a63232' }}>
             {errorMessage}
+          </div>
+        ) : null}
+        {todayLoadError && isManager ? (
+          <div className="panel" role="alert" style={{ marginBottom: 18, borderColor: '#d95a5a', color: '#a63232' }}>
+            {todayLoadError} Atualize a página para tentar novamente.
           </div>
         ) : null}
         {message ? (
@@ -1553,23 +1586,40 @@ export default function DashboardPage() {
         {isManager && activeView === 'dashboard' && (
           <>
             <div className="stats-grid">
-              <div className="stat-card primary">
+              <button type="button" className="stat-card stat-card-button primary" onClick={() => setPeopleDialog('collaborators')} disabled={loading}>
                 <div className="stat-label">Colaboradores</div>
                 <div className="stat-value">{stats.employees}</div>
-              </div>
-              <div className="stat-card success">
+              </button>
+              <button type="button" className="stat-card stat-card-button success" onClick={() => setPeopleDialog('present')} disabled={loading || Boolean(todayLoadError)}>
                 <div className="stat-label">Presentes hoje</div>
-                <div className="stat-value">{stats.present}</div>
-              </div>
-              <div className="stat-card warning">
+                <div className="stat-value">{todayLoadError ? '—' : stats.present}</div>
+              </button>
+              <button type="button" className="stat-card stat-card-button warning" onClick={() => setPeopleDialog('late')} disabled={loading || Boolean(todayLoadError)}>
                 <div className="stat-label">Atrasos</div>
-                <div className="stat-value">{stats.late}</div>
-              </div>
+                <div className="stat-value">{todayLoadError ? '—' : stats.late}</div>
+              </button>
               <div className="stat-card primary">
                 <div className="stat-label">Marcações no mês</div>
                 <div className="stat-value">{stats.monthlyEntries}</div>
               </div>
             </div>
+
+            <dialog ref={peopleDialogRef} className="people-dialog" aria-labelledby="people-dialog-title" onClose={() => setPeopleDialog(null)}>
+              <div className="people-dialog-heading">
+                <h3 id="people-dialog-title">
+                  {peopleDialog === 'collaborators' ? 'Colaboradores' : peopleDialog === 'present' ? 'Presentes hoje' : 'Atrasos hoje'}
+                </h3>
+                <button type="button" className="btn secondary compact" onClick={() => peopleDialogRef.current?.close()}>Fechar</button>
+              </div>
+              {peopleDialog === 'collaborators' ? (
+                stats.people.collaborators.length ? <ul>{stats.people.collaborators.map((person) => <li key={person.id}>{person.name}</li>)}</ul> : <p>Nenhum colaborador cadastrado.</p>
+              ) : peopleDialog === 'present' ? (
+                stats.people.present.length ? <ul>{stats.people.present.map((person) => <li key={person.id}><strong>{person.name}</strong><span>Entrada: {person.entryTime}</span></li>)}</ul> : <p>Nenhuma entrada registrada hoje.</p>
+              ) : peopleDialog === 'late' ? (
+                stats.people.late.length ? <ul>{stats.people.late.map((person) => <li key={person.id}><strong>{person.name}</strong><span>Entrada: {person.entryTime} · Prevista: {person.scheduledStart}</span></li>)}</ul> : <p>Nenhum atraso registrado hoje.</p>
+              ) : null}
+              {peopleDialog === 'present' || peopleDialog === 'late' ? <p className="subtle">Inclui marcações pendentes; rejeitadas não são consideradas.</p> : null}
+            </dialog>
 
             <div className="content-grid">
               <div className="panel">
@@ -1595,11 +1645,11 @@ export default function DashboardPage() {
                 <div className="summary-grid">
                   <div className="mini-box">
                     <span className="subtle">Equipe ativa</span>
-                    <strong>{stats.activeTeam}</strong>
+                    <strong>{todayLoadError ? '—' : stats.activeTeam}</strong>
                   </div>
                   <div className="mini-box">
                     <span className="subtle">Faltas</span>
-                    <strong>{stats.missing}</strong>
+                    <strong>{todayLoadError ? '—' : stats.missing}</strong>
                   </div>
                   <div className="mini-box">
                     <span className="subtle">Departamentos</span>
@@ -2326,8 +2376,8 @@ export default function DashboardPage() {
                 <strong>{stats.monthlyActiveEmployees}/{stats.employees}</strong>
               </div>
               <div className="mini-box">
-                <span className="subtle">Atrasos hoje (últimos registros)</span>
-                <strong>{stats.late}</strong>
+                <span className="subtle">Atrasos hoje</span>
+                <strong>{todayLoadError ? '—' : stats.late}</strong>
               </div>
               <div className="mini-box">
                 <span className="subtle">Marcações carregadas neste mês</span>
