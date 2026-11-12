@@ -207,6 +207,8 @@ export default function DashboardPage() {
   const [attendanceAlerts, setAttendanceAlerts] = useState<AttendanceAlert[]>([]);
   const [sessionProcessingErrors, setSessionProcessingErrors] = useState<SessionProcessingError[]>([]);
   const [alertsLoadError, setAlertsLoadError] = useState('');
+  const [autoResolveAlerts, setAutoResolveAlerts] = useState<boolean | null>(null);
+  const [autoResolveAlertsError, setAutoResolveAlertsError] = useState('');
   const [alertEmployeeFilter, setAlertEmployeeFilter] = useState('');
   const [alertTypeFilter, setAlertTypeFilter] = useState('');
   const [alertStatusFilter, setAlertStatusFilter] = useState('');
@@ -499,6 +501,17 @@ export default function DashboardPage() {
           })),
       );
       if (profile.role === 'admin' || profile.role === 'gestor') {
+        const { data: alertSettings, error: settingsError } = await supabase
+          .from('attendance_alert_settings')
+          .select('auto_resolve_daily')
+          .eq('company_id', profile.company_id)
+          .maybeSingle();
+        if (settingsError) {
+          setAutoResolveAlertsError(`Não foi possível carregar a configuração de encerramento automático: ${settingsError.message}`);
+        } else {
+          setAutoResolveAlerts(alertSettings?.auto_resolve_daily ?? false);
+          setAutoResolveAlertsError('');
+        }
         let alertLoadError = '';
         const { error: refreshAlertsError } = await supabase.rpc('refresh_attendance_alerts');
         if (refreshAlertsError) {
@@ -1114,6 +1127,30 @@ export default function DashboardPage() {
       } : item));
     setMessage('Situação do alerta atualizada e registrada na auditoria.');
     setSaving(false);
+  };
+
+  const handleAutoResolveAlerts = async (enabled: boolean) => {
+    if (!supabase) {
+      setAutoResolveAlertsError('Supabase não está configurado.');
+      return;
+    }
+
+    setSaving(true);
+    setMessage('');
+    setAutoResolveAlertsError('');
+    try {
+      const { error } = await supabase.rpc('set_daily_alert_auto_resolution', { p_enabled: enabled });
+      if (error) {
+        setAutoResolveAlertsError(`Não foi possível alterar o encerramento automático: ${error.message}`);
+      } else {
+        setAutoResolveAlerts(enabled);
+        setMessage(enabled ? 'Encerramento automático ativado para esta empresa.' : 'Encerramento automático desativado para esta empresa.');
+      }
+    } catch (error) {
+      setAutoResolveAlertsError(`Não foi possível alterar o encerramento automático: ${error instanceof Error ? error.message : 'erro de conexão desconhecido'}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleAdministratorSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -2725,6 +2762,22 @@ export default function DashboardPage() {
               Intervalos curtos são comparados ao intervalo cadastrado na escala, não a um mínimo legal.
               Escalas flexíveis sem horários definidos não geram alertas de horário fora da escala.
             </p>
+            <div className="panel" style={{ marginBottom: 16 }}>
+              <strong>Encerramento automático diário</strong>
+              <p className="subtle">
+                Quando ativado, alertas de dias anteriores são encerrados automaticamente e mantidos no histórico.
+                Isso não significa que foram revisados ou corrigidos. O mesmo tipo de alerta para a mesma jornada
+                ou marcação não será gerado novamente, mas outros tipos de alerta ainda poderão aparecer.
+                A rotina está agendada a cada hora e depende do Supabase Cron; atualize a página para ver os resultados.
+              </p>
+              {autoResolveAlertsError && <p role="alert" className="employee-overtime-error">{autoResolveAlertsError}</p>}
+              {autoResolveAlerts !== null && (
+                <button type="button" className="btn secondary" disabled={saving}
+                  onClick={() => handleAutoResolveAlerts(!autoResolveAlerts)}>
+                  {autoResolveAlerts ? 'Desativar encerramento automático' : 'Ativar encerramento automático'}
+                </button>
+              )}
+            </div>
             {alertsLoadError ? (
               <p role="alert" className="employee-overtime-error">{alertsLoadError}</p>
             ) : (
