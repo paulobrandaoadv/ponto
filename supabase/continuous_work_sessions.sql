@@ -168,7 +168,7 @@ begin
     ) values (
       session_row.company_id, session_row.employee_id, session_row.id, 'prolonged_work',
       case when worked_hours > settings.exceptional_hours then 'critical' else 'warning' end,
-      format('A jornada acumula %.2f horas trabalhadas.', worked_hours)
+      format('A jornada acumula %s horas trabalhadas.', round(worked_hours, 2))
     ) on conflict do nothing;
   end if;
 
@@ -177,7 +177,7 @@ begin
       company_id, employee_id, work_session_id, alert_type, severity, description
     ) values (
       session_row.company_id, session_row.employee_id, session_row.id, 'exceptional_work',
-      'critical', format('A jornada ultrapassou %.0f horas trabalhadas.', settings.exceptional_hours)
+      'critical', format('A jornada ultrapassou %s horas trabalhadas.', settings.exceptional_hours)
     ) on conflict do nothing;
   end if;
 
@@ -188,7 +188,7 @@ begin
       company_id, employee_id, work_session_id, alert_type, severity, description
     ) values (
       session_row.company_id, session_row.employee_id, session_row.id, 'open_too_long',
-      'warning', format('A jornada permanece aberta há mais de %.0f horas.', settings.open_hours)
+      'warning', format('A jornada permanece aberta há mais de %s horas.', settings.open_hours)
     ) on conflict do nothing;
   end if;
 

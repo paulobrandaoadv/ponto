@@ -5,6 +5,15 @@ export type WorkSessionPunch = OvertimePunch & { id?: string };
 
 export type WorkSession = WorkSessionPunch[];
 
+export function getEmployeePunchEvent(
+  state: 'not_started' | 'closed' | 'working' | 'on_break',
+  selected: 'entrada' | 'saida_almoco' | 'retorno_almoco' | 'saida',
+) {
+  if (state === 'not_started' || state === 'closed') return 'entrada';
+  if (state === 'on_break') return 'retorno_almoco';
+  return selected === 'saida' ? 'saida' : 'saida_almoco';
+}
+
 export function getWorkIntervals(session: WorkSession) {
   const intervals: Array<[number, number]> = [];
   let workStartedAt = Date.parse(session[0].recordedAt);

@@ -68,6 +68,8 @@ Para permitir jornadas de mensalistas através da meia-noite, execute `supabase/
 
 Para habilitar jornadas contínuas, intervalos opcionais/múltiplos e alertas, execute `supabase/continuous_work_sessions.sql` **somente em um projeto Supabase de testes** antes de testar esta versão. A migration cria `work_sessions` e `attendance_alerts`, associa os registros históricos que formam sequências válidas sem alterar as marcações originais e substitui a função de registro. Ela não deve ser executada em produção sem validação e autorização explícita. Os alertas de 10, 12 e 18 horas são operacionais; seus padrões podem ser ajustados em `attendance_alert_settings`. Intervalos curtos são comparados ao intervalo da escala cadastrada, não a um limite legal.
 
+Para impedir novas entradas próprias enquanto houver jornada aberta, aplique `supabase/block_duplicate_employee_entry.sql` após a migration de jornadas contínuas, primeiro em um banco de testes. A regra também se aplica à marcação facial; registros existentes e marcações manuais do administrador permanecem inalterados.
+
 O perfil autenticado precisa ter `company_id` preenchido e `role` igual a `admin` ou `gestor` para usar o painel.
 O navegador usa a chave pública (anon/publishable) com a sessão do usuário e as políticas RLS. O endpoint de login por nome precisa da chave `service_role` exclusivamente no servidor para resolver o nome para o usuário Auth; a chave nunca é enviada ao navegador.
 Configure `SUPABASE_SERVICE_ROLE_KEY` em `.env.local` e no ambiente privado de produção. Nunca use o prefixo `NEXT_PUBLIC_` nessa variável, não a compartilhe e não a coloque no código cliente.

@@ -17,7 +17,7 @@ function load(name, dependencies = {}) {
 }
 
 const time = load('attendance-time');
-const { calculateWorkedHours, collectWorkShifts } = load('attendance-worked', { './attendance-time': time });
+const { calculateWorkedHours, collectWorkShifts, getEmployeePunchEvent } = load('attendance-worked', { './attendance-time': time });
 const punch = (type, recordedAt, status = 'confirmed') => ({ type, recordedAt, status });
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
@@ -108,6 +108,13 @@ test('consecutive entries are flagged without creating a duplicate session', () 
   assert.equal(result.incomplete, 1);
   assert.equal(result.anomalies.length, 1);
   assert.equal(result.totalMinutes, 480);
+});
+
+test('employee punch follows the current session even before the selection is synchronized', () => {
+  assert.equal(getEmployeePunchEvent('working', 'entrada'), 'saida_almoco');
+  assert.equal(getEmployeePunchEvent('working', 'saida'), 'saida');
+  assert.equal(getEmployeePunchEvent('on_break', 'entrada'), 'retorno_almoco');
+  assert.equal(getEmployeePunchEvent('closed', 'saida'), 'entrada');
 });
 
 test('multiple break periods are subtracted and the state returns to working', () => {

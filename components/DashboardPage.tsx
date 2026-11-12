@@ -23,7 +23,7 @@ import {
 } from '@/lib/attendance-time';
 import { supabase } from '@/lib/supabase';
 import { cpfDigits, cpfSearchPattern, displayCpf, formatCpfInput, sameCpf } from '@/lib/cpf';
-import { calculateWorkedHours, getWorkIntervals } from '@/lib/attendance-worked';
+import { calculateWorkedHours, getEmployeePunchEvent, getWorkIntervals } from '@/lib/attendance-worked';
 import { dashboardPeople } from '@/lib/dashboard-people';
 import { calculateReportOvertime } from '@/lib/report-overtime';
 
@@ -246,6 +246,7 @@ export default function DashboardPage() {
   const scheduleDefaults = parseWorkSchedule(editingEmployee?.shift) || DEFAULT_WORK_SCHEDULE;
   const nextEmployeeEvent = workedHours.nextEvent;
   const employeeWorkState = workedHours.state;
+  const effectiveEmployeePunchEvent = getEmployeePunchEvent(employeeWorkState, employeePunchEvent);
   const lastEmployeePunch = monthlyOvertimePunches.length
     ? monthlyOvertimePunches[monthlyOvertimePunches.length - 1]
     : null;
@@ -859,8 +860,6 @@ export default function DashboardPage() {
       return;
     }
 
-    if (employeePunchInFlight.current) return;
-    employeePunchInFlight.current = true;
     setSaving(true);
     setMessage('');
     setErrorMessage('');
@@ -1195,6 +1194,8 @@ export default function DashboardPage() {
         return;
       }
 
+      if (employeePunchInFlight.current) return;
+      employeePunchInFlight.current = true;
       setSaving(true);
       setMessage('');
       setErrorMessage('');
@@ -1212,7 +1213,7 @@ export default function DashboardPage() {
       let punchError: { message: string } | null = null;
       try {
         const punchResult = await supabase.rpc('record_own_attendance', {
-          p_event_type: employeePunchEvent,
+          p_event_type: effectiveEmployeePunchEvent,
           p_request_id: crypto.randomUUID(),
           p_location: location || null,
           p_notes: notes || null,
@@ -1277,9 +1278,9 @@ export default function DashboardPage() {
       setMessage(
         `${displayEventType(savedPunch.event_type)} registrada às ${localTime(recordedAt)} (horário de Mato Grosso do Sul), com localização GPS (precisão aproximada de ${Math.round(locationSnapshot.accuracy)} m) e enviada para revisão.`,
       );
-      if (employeePunchEvent === 'saida') {
+      if (effectiveEmployeePunchEvent === 'saida') {
         setEmployeePunchEvent('entrada');
-      } else if (employeePunchEvent === 'entrada' || employeePunchEvent === 'retorno_almoco') {
+      } else if (effectiveEmployeePunchEvent === 'entrada' || effectiveEmployeePunchEvent === 'retorno_almoco') {
         setEmployeePunchEvent('saida_almoco');
       } else {
         setEmployeePunchEvent('retorno_almoco');
@@ -2074,10 +2075,7 @@ export default function DashboardPage() {
                     >
                       {saving
                         ? 'Registrando...'
-                        : `Registrar ${displayEventType(
-                          employeeWorkState === 'not_started' ? 'entrada' :
-                            employeeWorkState === 'on_break' ? 'retorno_almoco' : employeePunchEvent,
-                        ).toLowerCase()}`}
+                        : `Registrar ${displayEventType(effectiveEmployeePunchEvent).toLowerCase()}`}
                     </button>
                   ) : (
                     <>
