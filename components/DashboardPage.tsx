@@ -23,7 +23,7 @@ import {
 } from '@/lib/attendance-time';
 import { supabase } from '@/lib/supabase';
 import { cpfDigits, cpfSearchPattern, displayCpf, formatCpfInput, sameCpf } from '@/lib/cpf';
-import { calculateWorkedHours } from '@/lib/attendance-worked';
+import { calculateWorkedHours, getWorkIntervals } from '@/lib/attendance-worked';
 import { dashboardPeople } from '@/lib/dashboard-people';
 import { calculateReportOvertime } from '@/lib/report-overtime';
 
@@ -54,6 +54,32 @@ type AttendanceEntry = {
   latitude: number | null;
   longitude: number | null;
   accuracy: number | null;
+};
+
+type AttendanceAlert = {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  workSessionId: string | null;
+  attendanceRecordId: string | null;
+  alertType: string;
+  severity: string;
+  description: string;
+  status: 'pending' | 'viewed' | 'in_review' | 'resolved';
+  resolutionNotes: string;
+  createdAt: string;
+  startedAt: string | null;
+  endedAt: string | null;
+  workedMinutes: number | null;
+  breakMinutes: number | null;
+};
+
+type SessionProcessingError = {
+  id: string;
+  employeeName: string;
+  eventType: string;
+  recordedAt: string;
+  error: string;
 };
 
 type LocationSnapshot = {
@@ -94,6 +120,33 @@ const displayEventType = (type: AttendanceEntry['type']) => ({
   saida: 'Saída',
 }[type]);
 
+const displayPunchType = (type: string) => {
+  switch (type) {
+    case 'entrada': return 'Entrada';
+    case 'saida_almoco': return 'Saída almoço';
+    case 'retorno_almoco': return 'Retorno almoço';
+    case 'saida': return 'Saída';
+    default: return type;
+  }
+};
+
+const displayAlertType = (type: string) => ({
+  prolonged_work: 'Jornada prolongada',
+  exceptional_work: 'Jornada excepcional',
+  open_too_long: 'Jornada aberta',
+  short_break: 'Intervalo menor que o cadastrado',
+  outside_schedule: 'Fora do horário cadastrado',
+  inconsistent_sequence: 'Sequência inconsistente',
+  rejected_punch: 'Marcação rejeitada',
+}[type] || type);
+
+const displayAlertStatus = (status: AttendanceAlert['status']) => ({
+  pending: 'Pendente',
+  viewed: 'Visualizado',
+  in_review: 'Em análise',
+  resolved: 'Resolvido',
+}[status]);
+
 const normalizeShift = (shift: string | null) =>
   shift?.toLowerCase() === 'flex' || shift?.toLowerCase() === 'flexível'
     ? 'Flexível'
@@ -122,11 +175,12 @@ const csvField = (value: string) => {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const employeePunchInFlight = useRef(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [monthlyOvertimePunches, setMonthlyOvertimePunches] = useState<OvertimePunch[]>([]);
   const [overtimeLoadError, setOvertimeLoadError] = useState('');
-  const [activeView, setActiveView] = useState<'dashboard' | 'point' | 'employees' | 'administrators' | 'approvals' | 'reports'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'point' | 'employees' | 'administrators' | 'approvals' | 'reports' | 'alerts'>('dashboard');
   const [userEmail, setUserEmail] = useState('');
   const [userRole, setUserRole] = useState('');
   const [companyId, setCompanyId] = useState('');
@@ -148,6 +202,16 @@ export default function DashboardPage() {
   const [reportTo, setReportTo] = useState(() => localDate(new Date()));
   const [reportEmployeeId, setReportEmployeeId] = useState('');
   const [reportEntries, setReportEntries] = useState<AttendanceEntry[]>([]);
+  const [employeePunchEvent, setEmployeePunchEvent] = useState<AttendanceEntry['type']>('entrada');
+  const [attendanceAlerts, setAttendanceAlerts] = useState<AttendanceAlert[]>([]);
+  const [sessionProcessingErrors, setSessionProcessingErrors] = useState<SessionProcessingError[]>([]);
+  const [alertsLoadError, setAlertsLoadError] = useState('');
+  const [alertEmployeeFilter, setAlertEmployeeFilter] = useState('');
+  const [alertTypeFilter, setAlertTypeFilter] = useState('');
+  const [alertStatusFilter, setAlertStatusFilter] = useState('');
+  const [alertFrom, setAlertFrom] = useState('');
+  const [alertTo, setAlertTo] = useState('');
+  const [alertNotes, setAlertNotes] = useState<Record<string, string>>({});
   const [reportOvertime, setReportOvertime] = useState<ReturnType<typeof calculateReportOvertime>>([]);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportLoaded, setReportLoaded] = useState(false);
@@ -181,12 +245,26 @@ export default function DashboardPage() {
   const workedHours = useMemo(() => calculateWorkedHours(monthlyOvertimePunches), [monthlyOvertimePunches]);
   const scheduleDefaults = parseWorkSchedule(editingEmployee?.shift) || DEFAULT_WORK_SCHEDULE;
   const nextEmployeeEvent = workedHours.nextEvent;
+  const employeeWorkState = workedHours.state;
+  const lastEmployeePunch = monthlyOvertimePunches.length
+    ? monthlyOvertimePunches[monthlyOvertimePunches.length - 1]
+    : null;
 
   useEffect(() => {
     const dialog = peopleDialogRef.current;
     if (peopleDialog && dialog && !dialog.open) dialog.showModal();
     if (!peopleDialog && dialog?.open) dialog.close();
   }, [peopleDialog]);
+
+  useEffect(() => {
+    if (employeeWorkState === 'not_started' || employeeWorkState === 'closed') {
+      setEmployeePunchEvent('entrada');
+    } else if (employeeWorkState === 'on_break') {
+      setEmployeePunchEvent('retorno_almoco');
+    } else {
+      setEmployeePunchEvent('saida_almoco');
+    }
+  }, [employeeWorkState]);
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -414,6 +492,144 @@ export default function DashboardPage() {
             accuracy: record.accuracy,
           })),
       );
+      if (profile.role === 'admin' || profile.role === 'gestor') {
+        let alertLoadError = '';
+        const { error: refreshAlertsError } = await supabase.rpc('refresh_attendance_alerts');
+        if (refreshAlertsError) {
+          alertLoadError = `Não foi possível atualizar os alertas. Aplique a migration de jornadas contínuas e atualize a página. Detalhe: ${refreshAlertsError.message}`;
+        } else {
+          const alertRows = [];
+          let alertsError: { message: string } | null = null;
+          for (let offset = 0; ; offset += 500) {
+            const { data: page, error } = await supabase
+              .from('attendance_alerts')
+              .select('id, employee_id, work_session_id, attendance_record_id, alert_type, severity, description, status, resolution_notes, created_at')
+              .eq('company_id', profile.company_id)
+              .order('created_at', { ascending: false })
+              .order('id', { ascending: false })
+              .range(offset, offset + 499);
+            if (error) {
+              alertsError = error;
+              break;
+            }
+            alertRows.push(...(page || []));
+            if (!page || page.length < 500) break;
+          }
+          if (alertsError) {
+            alertLoadError = `Não foi possível carregar os alertas: ${alertsError.message}`;
+          } else {
+            const rows = alertRows;
+            const { data: processingErrors, error: processingErrorsError } = await supabase
+              .from('attendance_records')
+              .select('id, employee_id, event_type, recorded_at, work_session_error')
+              .eq('company_id', profile.company_id)
+              .not('work_session_error', 'is', null)
+              .order('recorded_at', { ascending: false })
+              .limit(100);
+            if (processingErrorsError) {
+              alertLoadError = `Não foi possível consultar falhas de associação das jornadas: ${processingErrorsError.message}`;
+            } else {
+              setSessionProcessingErrors((processingErrors || []).map((item) => ({
+                id: item.id,
+                employeeName: employeeNames.get(item.employee_id) || 'Funcionário',
+                eventType: item.event_type,
+                recordedAt: item.recorded_at,
+                error: item.work_session_error,
+              })));
+            }
+            const sessionIds = Array.from(new Set(rows.flatMap((row) => row.work_session_id ? [row.work_session_id] : [])));
+            const sessionMap = new Map<string, { started_at: string; ended_at: string | null }>();
+            const sessionPunches = new Map<string, Array<{ type: string; recordedAt: string; status: string }>>();
+            if (sessionIds.length) {
+              const { data: sessions, error: sessionsError } = await supabase
+                .from('work_sessions')
+                .select('id, started_at, ended_at')
+                .in('id', sessionIds);
+              const punches = [];
+              let punchesError: { message: string } | null = null;
+              if (!sessionsError) {
+                for (let offset = 0; ; offset += 500) {
+                  const { data: page, error } = await supabase.from('attendance_records')
+                  .select('id, work_session_id, event_type, recorded_at, status')
+                  .in('work_session_id', sessionIds)
+                  .in('status', ['confirmed', 'pending'])
+                  .order('recorded_at')
+                  .order('id')
+                  .range(offset, offset + 499);
+                  if (error) {
+                    punchesError = error;
+                    break;
+                  }
+                  punches.push(...(page || []));
+                  if (!page || page.length < 500) break;
+                }
+              }
+              if (sessionsError || punchesError) {
+                alertLoadError = `Não foi possível carregar os detalhes das jornadas: ${sessionsError?.message || punchesError?.message}`;
+              } else {
+                for (const session of sessions || []) {
+                  sessionMap.set(session.id, { started_at: session.started_at, ended_at: session.ended_at });
+                }
+                for (const punch of punches) {
+                  if (!punch.work_session_id) continue;
+                  const punchesForSession = sessionPunches.get(punch.work_session_id) || [];
+                  punchesForSession.push({
+                    type: punch.event_type,
+                    recordedAt: punch.recorded_at,
+                    status: punch.status,
+                  });
+                  sessionPunches.set(punch.work_session_id, punchesForSession);
+                }
+              }
+            }
+            setAttendanceAlerts(rows.map((row) => {
+              const session = row.work_session_id ? sessionMap.get(row.work_session_id) : null;
+              const punches = row.work_session_id ? sessionPunches.get(row.work_session_id) || [] : [];
+              const intervals = punches.length ? getWorkIntervals(punches) : [];
+              let workedMilliseconds = intervals.reduce((total, [start, end]) => total + end - start, 0);
+              let breakMilliseconds = 0;
+              let breakStartedAt: number | null = null;
+              for (const punch of punches) {
+                const timestamp = Date.parse(punch.recordedAt);
+                if (punch.type === 'saida_almoco') breakStartedAt = timestamp;
+                if (punch.type === 'retorno_almoco' && breakStartedAt !== null) {
+                  breakMilliseconds += timestamp - breakStartedAt;
+                  breakStartedAt = null;
+                }
+              }
+              if (session?.ended_at === null && punches.length) {
+                const now = Date.now();
+                if (breakStartedAt !== null) breakMilliseconds += now - breakStartedAt;
+                else {
+                  const lastPunch = punches[punches.length - 1];
+                  if (lastPunch.type === 'entrada' || lastPunch.type === 'retorno_almoco') {
+                    workedMilliseconds += now - Date.parse(lastPunch.recordedAt);
+                  }
+                }
+              }
+              const employee = loadedEmployees.find((item) => item.id === row.employee_id);
+              return {
+                id: row.id,
+                employeeId: row.employee_id,
+                employeeName: employee?.name || 'Funcionário',
+                workSessionId: row.work_session_id,
+                attendanceRecordId: row.attendance_record_id,
+                alertType: row.alert_type,
+                severity: row.severity,
+                description: row.description,
+                status: row.status,
+                resolutionNotes: row.resolution_notes || '',
+                createdAt: row.created_at,
+                startedAt: session?.started_at || null,
+                endedAt: session?.ended_at || null,
+                workedMinutes: session ? Math.floor(workedMilliseconds / 60000) : null,
+                breakMinutes: session ? Math.floor(breakMilliseconds / 60000) : null,
+              };
+            }));
+          }
+        }
+        setAlertsLoadError(alertLoadError);
+      }
       setLoading(false);
     };
 
@@ -447,6 +663,14 @@ export default function DashboardPage() {
       people,
     };
   }, [attendance, employees]);
+  const filteredAttendanceAlerts = useMemo(() => attendanceAlerts.filter((alert) => {
+    const date = localDate(new Date(alert.startedAt || alert.createdAt));
+    return (!alertEmployeeFilter || alert.employeeId === alertEmployeeFilter) &&
+      (!alertTypeFilter || alert.alertType === alertTypeFilter) &&
+      (!alertStatusFilter || alert.status === alertStatusFilter) &&
+      (!alertFrom || date >= alertFrom) &&
+      (!alertTo || date <= alertTo);
+  }), [alertEmployeeFilter, alertFrom, alertStatusFilter, alertTo, alertTypeFilter, attendanceAlerts]);
 
   const handleReportSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -495,8 +719,6 @@ export default function DashboardPage() {
         .from('attendance_records')
         .select('id, employee_id, event_type, recorded_at, location, notes, status, latitude, longitude, accuracy')
         .eq('company_id', companyId)
-        .gte('recorded_at', new Date(Date.parse(startIso) - 48 * 60 * 60 * 1000).toISOString())
-        .lt('recorded_at', new Date(Date.parse(endIso) + 48 * 60 * 60 * 1000).toISOString())
         .order('recorded_at', { ascending: true })
         .order('id', { ascending: true });
 
@@ -637,6 +859,8 @@ export default function DashboardPage() {
       return;
     }
 
+    if (employeePunchInFlight.current) return;
+    employeePunchInFlight.current = true;
     setSaving(true);
     setMessage('');
     setErrorMessage('');
@@ -852,6 +1076,42 @@ export default function DashboardPage() {
     setSaving(false);
   };
 
+  const handleReviewAlert = async (
+    alert: AttendanceAlert,
+    status: AttendanceAlert['status'],
+  ) => {
+    if (!supabase) {
+      setErrorMessage('Supabase não está configurado.');
+      return;
+    }
+    const notes = alertNotes[alert.id] || '';
+    if (status === 'resolved' && !notes.trim()) {
+      setErrorMessage('Informe a justificativa/providência antes de resolver o alerta.');
+      return;
+    }
+    setSaving(true);
+    setMessage('');
+    setErrorMessage('');
+    const { error } = await supabase.rpc('review_attendance_alert', {
+      p_alert_id: alert.id,
+      p_status: status,
+      p_resolution_notes: notes.trim() || null,
+    });
+    if (error) {
+      setErrorMessage(`Não foi possível atualizar o alerta: ${error.message}`);
+      setSaving(false);
+      return;
+    }
+    setAttendanceAlerts((current) => current.map((item) =>
+      item.id === alert.id ? {
+        ...item,
+        status,
+        resolutionNotes: notes.trim() || item.resolutionNotes,
+      } : item));
+    setMessage('Situação do alerta atualizada e registrada na auditoria.');
+    setSaving(false);
+  };
+
   const handleAdministratorSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!supabase) {
@@ -930,7 +1190,7 @@ export default function DashboardPage() {
     const notes = String(formData.get('notes') || '').trim();
 
     if (isEmployee) {
-      if (!nextEmployeeEvent || overtimeLoadError) {
+      if (!employeePunchEvent || overtimeLoadError) {
         setErrorMessage('Não foi possível continuar a jornada. Solicite a revisão das marcações ao administrador.');
         return;
       }
@@ -943,20 +1203,35 @@ export default function DashboardPage() {
         locationSnapshot = await getLocationSnapshot();
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : 'Não foi possível obter sua localização.');
+        employeePunchInFlight.current = false;
         setSaving(false);
         return;
       }
 
-      const { data: recordId, error: punchError } = await supabase.rpc('record_own_attendance', {
-        p_location: location || null,
-        p_notes: notes || null,
-        p_latitude: locationSnapshot.latitude,
-        p_longitude: locationSnapshot.longitude,
-        p_accuracy: locationSnapshot.accuracy,
-      });
+      let recordId: string | null = null;
+      let punchError: { message: string } | null = null;
+      try {
+        const punchResult = await supabase.rpc('record_own_attendance', {
+          p_event_type: employeePunchEvent,
+          p_request_id: crypto.randomUUID(),
+          p_location: location || null,
+          p_notes: notes || null,
+          p_latitude: locationSnapshot.latitude,
+          p_longitude: locationSnapshot.longitude,
+          p_accuracy: locationSnapshot.accuracy,
+        });
+        recordId = punchResult.data;
+        punchError = punchResult.error;
+      } catch (error) {
+        setErrorMessage(`Não foi possível registrar seu ponto: ${error instanceof Error ? error.message : 'erro de conexão desconhecido'}`);
+        employeePunchInFlight.current = false;
+        setSaving(false);
+        return;
+      }
 
       if (punchError || !recordId) {
         setErrorMessage(`Não foi possível registrar seu ponto: ${punchError?.message || 'registro não retornado'}`);
+        employeePunchInFlight.current = false;
         setSaving(false);
         return;
       }
@@ -968,6 +1243,7 @@ export default function DashboardPage() {
         .single();
       if (savedPunchError || !savedPunch) {
         setErrorMessage('O ponto foi registrado, mas não foi possível atualizar o horário na tela. Atualize a página antes de fazer outra marcação.');
+        employeePunchInFlight.current = false;
         setSaving(false);
         return;
       }
@@ -1001,6 +1277,14 @@ export default function DashboardPage() {
       setMessage(
         `${displayEventType(savedPunch.event_type)} registrada às ${localTime(recordedAt)} (horário de Mato Grosso do Sul), com localização GPS (precisão aproximada de ${Math.round(locationSnapshot.accuracy)} m) e enviada para revisão.`,
       );
+      if (employeePunchEvent === 'saida') {
+        setEmployeePunchEvent('entrada');
+      } else if (employeePunchEvent === 'entrada' || employeePunchEvent === 'retorno_almoco') {
+        setEmployeePunchEvent('saida_almoco');
+      } else {
+        setEmployeePunchEvent('retorno_almoco');
+      }
+      employeePunchInFlight.current = false;
       setSaving(false);
       form.reset();
       return;
@@ -1483,6 +1767,12 @@ export default function DashboardPage() {
               >
                 Relatórios
               </button>
+              <button
+                className={`nav-link ${activeView === 'alerts' ? 'active' : ''}`}
+                onClick={() => setActiveView('alerts')}
+              >
+                Jornadas com Alertas ({attendanceAlerts.filter((alert) => alert.status === 'pending').length})
+              </button>
             </>
           ) : null}
         </nav>
@@ -1497,7 +1787,7 @@ export default function DashboardPage() {
       <main className="main-panel">
         <header className="topbar">
           <div>
-            <h1>{activeView === 'dashboard' ? 'Dashboard' : activeView === 'point' ? isEmployee ? 'Meu ponto' : 'Registro de ponto' : activeView === 'employees' ? 'Funcionários' : activeView === 'administrators' ? 'Administradores' : activeView === 'approvals' ? 'Revisar marcações' : 'Relatórios'}</h1>
+            <h1>{activeView === 'dashboard' ? 'Dashboard' : activeView === 'point' ? isEmployee ? 'Meu ponto' : 'Registro de ponto' : activeView === 'employees' ? 'Funcionários' : activeView === 'administrators' ? 'Administradores' : activeView === 'approvals' ? 'Revisar marcações' : activeView === 'alerts' ? 'Jornadas com Alertas' : 'Relatórios'}</h1>
             <div className="subtle">Sistema de controle de ponto</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -1544,7 +1834,7 @@ export default function DashboardPage() {
                 </strong>
                 {!loading && (isDailyWorker ? workedHours.days : monthlyOvertime?.days || []).length > 0 ? (
                   <div className="employee-overtime-days">
-                    <h4>{isDailyWorker ? 'Horas extras por dia de entrada' : 'Horas extras por dia'}</h4>
+                    <h4>Horas extras por data trabalhada</h4>
                     <ul>
                       {(isDailyWorker ? workedHours.days : monthlyOvertime?.days || []).map((day) => (
                         <li key={day.date}>
@@ -1679,9 +1969,56 @@ export default function DashboardPage() {
                         <input value={employees[0]?.name || ''} readOnly placeholder="Cadastro ainda não vinculado" />
                       </div>
                       <div className="field full">
-                        <label>Próxima marcação</label>
-                        <input value={nextEmployeeEvent ? displayEventType(nextEmployeeEvent) : 'Jornada precisa de revisão'} readOnly />
+                        <label>Situação da jornada</label>
+                        <input
+                          value={employeeWorkState === 'not_started'
+                            ? 'Jornada não iniciada'
+                            : employeeWorkState === 'closed'
+                              ? 'Jornada encerrada'
+                              : employeeWorkState === 'on_break'
+                                ? 'Em intervalo'
+                                : 'Jornada em andamento'}
+                          readOnly
+                        />
                       </div>
+                      <div className="field full">
+                        <label>Última marcação</label>
+                        <input
+                          value={lastEmployeePunch
+                            ? `${displayPunchType(lastEmployeePunch.type)} — ${localDate(new Date(lastEmployeePunch.recordedAt))} ${localTime(new Date(lastEmployeePunch.recordedAt))}`
+                            : 'Nenhuma marcação registrada'}
+                          readOnly
+                        />
+                      </div>
+                      {employeeWorkState === 'working' ? (
+                        <fieldset className="field full">
+                          <legend>Escolha a marcação</legend>
+                          <label>
+                            <input
+                              type="radio"
+                              name="employeePunchEvent"
+                              checked={employeePunchEvent === 'saida_almoco'}
+                              onChange={() => setEmployeePunchEvent('saida_almoco')}
+                            />
+                            {' '}Registrar intervalo
+                          </label>
+                          <label style={{ marginLeft: 18 }}>
+                            <input
+                              type="radio"
+                              name="employeePunchEvent"
+                              checked={employeePunchEvent === 'saida'}
+                              onChange={() => setEmployeePunchEvent('saida')}
+                            />
+                            {' '}Encerrar jornada
+                          </label>
+                        </fieldset>
+                      ) : null}
+                      {employeeWorkState === 'on_break' ? (
+                        <div className="field full">
+                          <label>Próxima marcação</label>
+                          <input value="Retorno do intervalo" readOnly />
+                        </div>
+                      ) : null}
                     </>
                   ) : (
                     <>
@@ -1737,9 +2074,10 @@ export default function DashboardPage() {
                     >
                       {saving
                         ? 'Registrando...'
-                        : nextEmployeeEvent
-                          ? `Registrar ${displayEventType(nextEmployeeEvent).toLowerCase()}`
-                          : 'Jornada precisa de revisão'}
+                        : `Registrar ${displayEventType(
+                          employeeWorkState === 'not_started' ? 'entrada' :
+                            employeeWorkState === 'on_break' ? 'retorno_almoco' : employeePunchEvent,
+                        ).toLowerCase()}`}
                     </button>
                   ) : (
                     <>
@@ -2355,6 +2693,129 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {isManager && activeView === 'alerts' && (
+          <div className="panel">
+            <h3>Jornadas com Alertas</h3>
+            <p className="subtle">
+              Os alertas são operacionais e não substituem a análise da legislação, da categoria ou de acordos coletivos.
+              Intervalos curtos são comparados ao intervalo cadastrado na escala, não a um mínimo legal.
+              Escalas flexíveis sem horários definidos não geram alertas de horário fora da escala.
+            </p>
+            {alertsLoadError ? (
+              <p role="alert" className="employee-overtime-error">{alertsLoadError}</p>
+            ) : (
+              <>
+                {sessionProcessingErrors.length ? (
+                  <div className="panel" role="alert" style={{ marginBottom: 16, borderColor: '#d95a5a' }}>
+                    <h4>Registros que precisam de conferência técnica</h4>
+                    <p className="subtle">A batida foi preservada, mas o sistema não conseguiu associá-la a uma jornada.</p>
+                    {sessionProcessingErrors.map((item) => (
+                      <p key={item.id}>
+                        {item.employeeName} — {displayPunchType(item.eventType)} em {localDate(new Date(item.recordedAt))} {localTime(new Date(item.recordedAt))}: {item.error}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="form-grid" style={{ marginTop: 16 }}>
+                  <div className="field">
+                    <label htmlFor="alertEmployeeFilter">Funcionário</label>
+                    <select id="alertEmployeeFilter" value={alertEmployeeFilter} onChange={(event) => setAlertEmployeeFilter(event.target.value)}>
+                      <option value="">Todos</option>
+                      {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="alertFrom">Data inicial</label>
+                    <input id="alertFrom" type="date" value={alertFrom} onChange={(event) => setAlertFrom(event.target.value)} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="alertTo">Data final</label>
+                    <input id="alertTo" type="date" value={alertTo} onChange={(event) => setAlertTo(event.target.value)} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="alertTypeFilter">Tipo de alerta</label>
+                    <select id="alertTypeFilter" value={alertTypeFilter} onChange={(event) => setAlertTypeFilter(event.target.value)}>
+                      <option value="">Todos</option>
+                      {Array.from(new Set(attendanceAlerts.map((alert) => alert.alertType))).map((type) => (
+                        <option key={type} value={type}>{displayAlertType(type)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="alertStatusFilter">Situação</label>
+                    <select id="alertStatusFilter" value={alertStatusFilter} onChange={(event) => setAlertStatusFilter(event.target.value)}>
+                      <option value="">Todas</option>
+                      <option value="pending">Pendente</option>
+                      <option value="viewed">Visualizado</option>
+                      <option value="in_review">Em análise</option>
+                      <option value="resolved">Resolvido</option>
+                    </select>
+                  </div>
+                </div>
+                <p className="subtle">{filteredAttendanceAlerts.length} alerta(s) encontrados.</p>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Funcionário</th>
+                        <th>Entrada</th>
+                        <th>Saída</th>
+                        <th>Trabalhadas</th>
+                        <th>Intervalos</th>
+                        <th>Alerta / gravidade</th>
+                        <th>Situação / providência</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredAttendanceAlerts.map((alert) => (
+                        <tr key={alert.id}>
+                          <td>{alert.employeeName}</td>
+                          <td>{alert.startedAt ? `${localDate(new Date(alert.startedAt))} ${localTime(new Date(alert.startedAt))}` : '—'}</td>
+                          <td>{alert.endedAt ? `${localDate(new Date(alert.endedAt))} ${localTime(new Date(alert.endedAt))}` : 'Em andamento'}</td>
+                          <td>{alert.workedMinutes === null ? '—' : formatOvertimeMinutes(alert.workedMinutes)}</td>
+                          <td>{alert.breakMinutes === null ? '—' : formatOvertimeMinutes(alert.breakMinutes)}</td>
+                          <td>
+                            <strong>{displayAlertType(alert.alertType)}</strong>
+                            <div>{alert.severity === 'critical' ? 'Crítico' : alert.severity === 'warning' ? 'Atenção' : 'Informativo'}</div>
+                            <div className="subtle">{alert.description}</div>
+                            {alert.attendanceRecordId ? <div className="subtle">Marcação: {alert.attendanceRecordId}</div> : null}
+                          </td>
+                          <td>
+                            <strong>{displayAlertStatus(alert.status)}</strong>
+                            {alert.resolutionNotes ? <div className="subtle">{alert.resolutionNotes}</div> : null}
+                            {alert.status !== 'resolved' ? (
+                              <div style={{ minWidth: 220 }}>
+                                <textarea
+                                  aria-label={`Justificativa para ${alert.employeeName}`}
+                                  placeholder="Justificativa/providência (obrigatória para resolver)"
+                                  value={alertNotes[alert.id] || ''}
+                                  onChange={(event) => setAlertNotes((current) => ({ ...current, [alert.id]: event.target.value }))}
+                                />
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                                  {alert.status === 'pending' ? (
+                                    <button type="button" className="btn secondary" disabled={saving} onClick={() => handleReviewAlert(alert, 'viewed')}>Visualizado</button>
+                                  ) : null}
+                                  {alert.status !== 'in_review' ? (
+                                    <button type="button" className="btn secondary" disabled={saving} onClick={() => handleReviewAlert(alert, 'in_review')}>Em análise</button>
+                                  ) : null}
+                                  <button type="button" className="btn primary" disabled={saving} onClick={() => handleReviewAlert(alert, 'resolved')}>Resolver</button>
+                                </div>
+                              </div>
+                            ) : null}
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredAttendanceAlerts.length === 0 ? (
+                        <tr><td colSpan={7} className="empty">Nenhum alerta corresponde aos filtros.</td></tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {isManager && activeView === 'reports' && (
           <div className="panel">
             <h3>Relatórios</h3>
@@ -2447,14 +2908,14 @@ export default function DashboardPage() {
                 <h3>Horas extras no período</h3>
                 <p className="subtle">
                   Total: <strong>{formatOvertimeMinutes(reportOvertime.reduce((total, item) => total + item.totalMinutes, 0))}</strong>.
-                  {' '}As jornadas são atribuídas ao dia da entrada, mesmo quando terminam depois do período.
+                  {' '}O período seleciona jornadas pela data da entrada; as horas são distribuídas pelas datas locais efetivamente trabalhadas, inclusive após a data final.
                   Marcações pendentes são incluídas; rejeitadas e jornadas incompletas ou com mais de 48 horas não são somadas.
                   Revise eventuais marcações inconsistentes.
                 </p>
                 <div className="table-wrap">
                   <table>
                     <thead>
-                      <tr><th>Funcionário</th><th>Total de horas extras</th><th>Inclui pendentes</th><th>Por dia de entrada</th></tr>
+                      <tr><th>Funcionário</th><th>Total de horas extras</th><th>Inclui pendentes</th><th>Data trabalhada</th></tr>
                     </thead>
                     <tbody>
                       {reportOvertime.map((item) => (

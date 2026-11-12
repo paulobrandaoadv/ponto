@@ -43,7 +43,10 @@ test('reports totals by employee and entry date, including shifts ending after t
   assert.equal(result[0].pendingMinutes, 0);
   assert.equal(result[1].totalMinutes, 1500);
   assert.equal(result[1].pendingMinutes, 1500);
-  assert.deepEqual(plain(result[1].days), [{ date: '2026-11-10', minutes: 1500 }]);
+  assert.deepEqual(plain(result[1].days), [
+    { date: '2026-11-11', minutes: 540 },
+    { date: '2026-11-10', minutes: 960 },
+  ]);
   const nextDay = calculateReportOvertime(employees, punches, '2026-11-11', '2026-11-11');
   assert.equal(nextDay[0].totalMinutes, 0);
   assert.equal(nextDay[1].totalMinutes, 300);

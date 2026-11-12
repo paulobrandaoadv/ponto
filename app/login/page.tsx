@@ -1,13 +1,14 @@
 'use client';
 
-import { FormEvent, useCallback, useState } from 'react';
+import { FormEvent, useCallback, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import FaceCamera from '@/components/FaceCamera';
 import { FaceRecognitionError } from '@/lib/face-recognition';
 import { supabase } from '@/lib/supabase';
 
-type LoginMode = 'face' | 'manual' | 'processing' | 'punch-error';
+type LoginMode = 'face' | 'face-action' | 'manual' | 'processing' | 'punch-error';
+type FacePunchType = 'entrada' | 'saida_almoco' | 'retorno_almoco' | 'saida';
 
 type FaceAuthResult = {
   error?: string;
@@ -15,6 +16,13 @@ type FaceAuthResult = {
   employeeName?: string;
   tokenHash?: string;
   challengeId?: string;
+};
+
+const facePunchLabels: Record<FacePunchType, string> = {
+  entrada: 'Entrada',
+  saida_almoco: 'Iniciar intervalo',
+  retorno_almoco: 'Retorno do intervalo',
+  saida: 'Encerrar jornada',
 };
 
 const getLocationSnapshot = () =>
@@ -50,6 +58,8 @@ export default function LoginPage() {
   const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [pendingFacePunch, setPendingFacePunch] = useState<{ employeeName: string; challengeId: string } | null>(null);
+  const facePunchInFlight = useRef(false);
 
   const handleCameraError = useCallback((cameraError: Error) => {
     setMode('manual');
@@ -137,12 +147,28 @@ export default function LoginPage() {
       return;
     }
 
+    setPendingFacePunch({ employeeName: result.employeeName, challengeId: result.challengeId });
+    setMode('face-action');
+  };
+
+  const handleFaceAttendance = async (eventType: FacePunchType) => {
+    if (!supabase || !pendingFacePunch) {
+      setMode('punch-error');
+      setError('A verificação facial expirou. Abra Meu ponto e registre a marcação após entrar novamente.');
+      return;
+    }
+    if (facePunchInFlight.current) return;
+    facePunchInFlight.current = true;
+
+    setMode('processing');
+    setError('');
     let locationSnapshot: { latitude: number; longitude: number; accuracy: number };
     try {
       locationSnapshot = await getLocationSnapshot();
     } catch (locationError) {
       setMode('punch-error');
       setError(locationError instanceof Error ? locationError.message : 'Não foi possível obter o GPS.');
+      facePunchInFlight.current = false;
       return;
     }
 
@@ -155,13 +181,16 @@ export default function LoginPage() {
         p_latitude: locationSnapshot.latitude,
         p_longitude: locationSnapshot.longitude,
         p_accuracy: locationSnapshot.accuracy,
-        p_challenge_id: result.challengeId,
+        p_challenge_id: pendingFacePunch.challengeId,
+        p_request_id: crypto.randomUUID(),
+        p_event_type: eventType,
       });
       recordId = attendanceResult.data;
       attendanceError = attendanceResult.error;
     } catch {
       setMode('punch-error');
       setError('Sua identidade foi validada e a sessão foi iniciada, mas não foi possível registrar o ponto. Abra Meu ponto para concluir manualmente.');
+      facePunchInFlight.current = false;
       return;
     }
     if (attendanceError || !recordId) {
@@ -169,6 +198,7 @@ export default function LoginPage() {
       setError(
         `Sua identidade foi validada e a sessão foi iniciada, mas não foi possível registrar o ponto: ${attendanceError?.message || 'registro não retornado'}`,
       );
+      facePunchInFlight.current = false;
       return;
     }
 
@@ -188,10 +218,12 @@ export default function LoginPage() {
     setError('');
     setSuccessMessage(
       signOutFailed
-        ? `Ponto batido com sucesso. ${result.employeeName}. A sessão foi removida deste aparelho; avise o administrador se esta mensagem persistir.`
-        : `Ponto batido com sucesso. ${result.employeeName}`,
+        ? `${facePunchLabels[eventType]} registrada. ${pendingFacePunch.employeeName}. A sessão foi removida deste aparelho; avise o administrador se esta mensagem persistir.`
+        : `${facePunchLabels[eventType]} registrada. ${pendingFacePunch.employeeName}`,
     );
+    setPendingFacePunch(null);
     setMode('face');
+    facePunchInFlight.current = false;
   };
 
   const handleManualSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -259,13 +291,17 @@ export default function LoginPage() {
         <div className="login-heading">
           <Image className="login-logo" src="/anbelo-logo.png" alt="Logo Anbelo" width={48} height={52} priority />
           <h1>
-            {mode === 'face' ? 'Bater o Ponto pela Facial' : mode === 'processing' ? 'Validando marcação' : mode === 'punch-error' ? 'Marcação não concluída' : 'Acessar sistema'}
+            {mode === 'face' ? 'Bater o Ponto pela Facial' : mode === 'face-action' ? 'Escolha a marcação' : mode === 'processing' ? pendingFacePunch ? 'Registrando ponto' : 'Validando identidade' : mode === 'punch-error' ? 'Marcação não concluída' : 'Acessar sistema'}
           </h1>
           <p className="login-description">
             {mode === 'face'
-              ? 'Centralize seu rosto e toque em Bater Ponto. Você terá até três tentativas.'
+              ? 'Centralize seu rosto para validar sua identidade. Você terá até três tentativas.'
+              : mode === 'face-action'
+                ? `Identidade validada para ${pendingFacePunch?.employeeName || 'funcionário'}. Escolha exatamente o que deseja registrar.`
               : mode === 'processing'
-                ? 'Rosto validado. Estamos solicitando sua localização e registrando o ponto.'
+                ? pendingFacePunch
+                  ? 'Estamos solicitando sua localização e registrando a marcação escolhida.'
+                  : 'Estamos confirmando sua identidade e preparando as opções de marcação.'
                 : mode === 'punch-error'
                   ? 'Sua identidade foi validada, mas a marcação precisa ser concluída no sistema.'
                   : 'Entre com seu e-mail, nome, matrícula ou código de registro e senha.'}
@@ -284,7 +320,7 @@ export default function LoginPage() {
               </p>
             ) : null}
             <FaceCamera
-              buttonText="Bater Ponto"
+              buttonText="Validar identidade"
               onCameraError={handleCameraError}
               onCapture={handleFaceCapture}
               onCaptureError={handleCaptureError}
@@ -294,6 +330,28 @@ export default function LoginPage() {
             </p>
             <button type="button" className="btn secondary" onClick={openManualLogin} style={{ width: '100%', marginTop: 4 }}>
               Entrar com nome ou matrícula e senha
+            </button>
+          </div>
+        ) : null}
+
+        {mode === 'face-action' ? (
+          <div style={{ display: 'grid', gap: 10 }}>
+            <p className="subtle">
+              A virada do dia não encerra a jornada. Selecione a operação real; marcações fora da sequência serão preservadas e sinalizadas para revisão.
+            </p>
+            {(Object.keys(facePunchLabels) as FacePunchType[]).map((eventType) => (
+              <button
+                key={eventType}
+                type="button"
+                className={eventType === 'entrada' ? 'btn secondary' : 'btn primary'}
+                disabled={loading}
+                onClick={() => handleFaceAttendance(eventType)}
+              >
+                {facePunchLabels[eventType]}
+              </button>
+            ))}
+            <button type="button" className="btn secondary" onClick={() => router.replace('/dashboard')}>
+              Abrir Meu ponto sem marcar agora
             </button>
           </div>
         ) : null}

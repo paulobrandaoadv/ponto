@@ -31,7 +31,10 @@ test('calculates overnight weekday shift using total work less normal hours', ()
     '2026-11-10T16:51:35.886Z', '2026-11-11T12:02:27.421Z');
   const result = calculateMonthlyOvertime(punches, DEFAULT_WORK_SCHEDULE, false, '2026-11');
   assert.equal(result.confirmedMinutes, 1026);
-  assert.deepEqual(JSON.parse(JSON.stringify(result.days)), [{ date: '2026-11-10', minutes: 1026 }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.days)), [
+    { date: '2026-11-11', minutes: 482 },
+    { date: '2026-11-10', minutes: 544 },
+  ]);
 });
 
 test('calculates another overnight shift with exact recorded seconds', () => {
@@ -49,7 +52,7 @@ test('calculates each complete shift separately including early entries and pend
   const result = calculateMonthlyOvertime(punches, DEFAULT_WORK_SCHEDULE, false, '2026-11');
   assert.equal(result.confirmedMinutes, 120);
   assert.equal(result.pendingMinutes, 60);
-  assert.equal(result.days[0].minutes, 180);
+  assert.equal(result.days.reduce((total, day) => total + day.minutes, 0), 180);
 });
 
 test('weekend rules, incomplete shifts and month of entry', () => {
@@ -61,6 +64,14 @@ test('weekend rules, incomplete shifts and month of entry', () => {
   const crossMonth = shift('2026-11-30T11:00:00Z', '2026-11-30T16:00:00Z', '2026-11-30T17:00:00Z', '2026-12-01T12:00:00Z');
   assert.equal(calculateMonthlyOvertime(crossMonth, null, false, '2026-11').confirmedMinutes, 900);
   assert.equal(calculateMonthlyOvertime(crossMonth, null, false, '2026-12').confirmedMinutes, 0);
+});
+
+test('Saturday-after-noon rule continues through an overnight shift by its entry day', () => {
+  const saturday = shift('2026-11-07T14:00:00Z', '2026-11-07T16:00:00Z',
+    '2026-11-07T16:30:00Z', '2026-11-08T12:00:00Z');
+  const result = calculateMonthlyOvertime(saturday, null, true);
+  assert.equal(result.confirmedMinutes, 1170);
+  assert.equal(result.days.reduce((total, day) => total + day.minutes, 0), 1170);
 });
 
 test('friday shift ending saturday uses friday rule; sunday counts all work', () => {

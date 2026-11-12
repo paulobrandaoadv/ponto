@@ -1,5 +1,5 @@
 import { attendanceDate, attendanceDateTimeToIso } from './attendance-time';
-import { collectWorkShifts } from './attendance-worked';
+import { collectWorkShifts, getWorkIntervals, splitIntervalByDay } from './attendance-worked';
 
 export type WorkSchedule = {
   start: string;
@@ -82,26 +82,56 @@ export function calculateMonthlyOvertime(
   let confirmedMinutes = 0;
   let pendingMinutes = 0;
   for (const shift of collectWorkShifts(punches).shifts) {
-    const [entry, breakStart, breakEnd, exit] = shift.map((punch) => Date.parse(punch.recordedAt));
+    const entry = Date.parse(shift[0].recordedAt);
     const date = attendanceDate(new Date(entry));
     if (month && !date.startsWith(`${month}-`)) continue;
     const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-    const workedMs = (breakStart - entry) + (exit - breakEnd);
-    let overtimeMs: number;
+    const intervals = getWorkIntervals(shift);
+    const overtimeByDay = new Map<string, number>();
     if (weekday === 0 || (weekday === 6 && !saturdayUntilNoon)) {
-      overtimeMs = workedMs;
+      for (const [start, end] of intervals) {
+        for (const segment of splitIntervalByDay(start, end)) {
+          overtimeByDay.set(segment.date, (overtimeByDay.get(segment.date) || 0) + segment.milliseconds);
+        }
+      }
     } else if (weekday === 6) {
       const noon = Date.parse(attendanceDateTimeToIso(date, '12:00'));
-      overtimeMs = Math.max(0, breakStart - Math.max(entry, noon)) +
-        Math.max(0, exit - Math.max(breakEnd, noon));
+      for (const [start, end] of intervals) {
+        for (const segment of splitIntervalByDay(start, end)) {
+          const minutes = Math.max(0, segment.end - Math.max(segment.start, noon));
+          if (minutes) overtimeByDay.set(segment.date, (overtimeByDay.get(segment.date) || 0) + minutes);
+        }
+      }
     } else {
-      overtimeMs = Math.max(0, workedMs - standardMinutes * 60000);
+      let normalMinutesRemaining = standardMinutes;
+      for (const [start, end] of intervals) {
+        for (const segment of splitIntervalByDay(start, end)) {
+          const segmentMinutes = segment.milliseconds / 60000;
+          const normalMinutes = Math.min(normalMinutesRemaining, segmentMinutes);
+          normalMinutesRemaining -= normalMinutes;
+          const overtimeMs = segment.milliseconds - normalMinutes * 60000;
+          if (overtimeMs) overtimeByDay.set(segment.date, (overtimeByDay.get(segment.date) || 0) + overtimeMs);
+        }
+      }
     }
-    const minutes = Math.floor(overtimeMs / 60000);
-    if (!minutes) continue;
-    if (shift.some((punch) => punch.status === 'pending')) pendingMinutes += minutes;
-    else confirmedMinutes += minutes;
-    days.set(date, (days.get(date) || 0) + minutes);
+    const totalOvertimeMs = Array.from(overtimeByDay.values()).reduce((total, value) => total + value, 0);
+    const totalMinutes = Math.floor(totalOvertimeMs / 60000);
+    const roundedDays = Array.from(overtimeByDay, ([day, milliseconds]) => ({
+      date: day,
+      minutes: Math.floor(milliseconds / 60000),
+      remainder: milliseconds % 60000,
+    })).sort((a, b) => b.remainder - a.remainder || a.date.localeCompare(b.date));
+    let remainingMinutes = totalMinutes - roundedDays.reduce((total, day) => total + day.minutes, 0);
+    for (const day of roundedDays) {
+      if (remainingMinutes <= 0) break;
+      day.minutes += 1;
+      remainingMinutes -= 1;
+    }
+    if (shift.some((punch) => punch.status === 'pending')) pendingMinutes += totalMinutes;
+    else confirmedMinutes += totalMinutes;
+    for (const day of roundedDays) {
+      if (day.minutes) days.set(day.date, (days.get(day.date) || 0) + day.minutes);
+    }
   }
   return {
     confirmedMinutes,
