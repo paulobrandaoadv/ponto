@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import FaceCamera from '@/components/FaceCamera';
+import { isDuplicateFaceAttendanceError } from '@/lib/face-attendance';
 import { FaceRecognitionError } from '@/lib/face-recognition';
 import { supabase } from '@/lib/supabase';
 
@@ -173,7 +174,7 @@ export default function LoginPage() {
     }
 
     let recordId: string | null = null;
-    let attendanceError: { message: string } | null = null;
+    let attendanceError: { message: string; code?: string } | null = null;
     try {
       const attendanceResult = await supabase.rpc('record_own_attendance_with_face', {
         p_location: null,
@@ -194,6 +195,12 @@ export default function LoginPage() {
       return;
     }
     if (attendanceError || !recordId) {
+      if (isDuplicateFaceAttendanceError(attendanceError)) {
+        setMode('face-action');
+        setError(`${attendanceError.message} Escolha outra marcação ou abra Meu ponto.`);
+        facePunchInFlight.current = false;
+        return;
+      }
       setMode('punch-error');
       setError(
         `Sua identidade foi validada e a sessão foi iniciada, mas não foi possível registrar o ponto: ${attendanceError?.message || 'registro não retornado'}`,
