@@ -337,7 +337,7 @@ export default function LoginPage() {
         {mode === 'face-action' ? (
           <div style={{ display: 'grid', gap: 10 }}>
             <p className="subtle">
-              A virada do dia não encerra a jornada. Uma nova entrada é bloqueada enquanto houver jornada aberta; outras marcações fora da sequência serão preservadas e sinalizadas para revisão.
+              A virada do dia não encerra a jornada. Marcações iguais em sequência e novas entradas com jornada aberta são bloqueadas; outras marcações fora da sequência serão sinalizadas para revisão.
             </p>
             {(Object.keys(facePunchLabels) as FacePunchType[]).map((eventType) => (
               <button
