@@ -81,7 +81,7 @@ Configure `SUPABASE_SERVICE_ROLE_KEY` em `.env.local` e no ambiente privado de p
 - Código sequencial automático e único para cada funcionário
 - Criação/consulta de departamentos em `departments`
 - Registro e consulta de marcações em `attendance_records`
-- Revisão de marcações pendentes com auditoria
+- Revisão de marcações pendentes com filtro por funcionário e auditoria
 - Consulta de marcações por período e funcionário, com exportação CSV
 - Arquivamento/restauração de funcionários sem apagar o histórico de ponto
 - Exclusão definitiva de funcionário, conta vinculada e marcações associadas

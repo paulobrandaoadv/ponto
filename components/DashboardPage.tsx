@@ -202,6 +202,7 @@ export default function DashboardPage() {
   const [reportTo, setReportTo] = useState(() => localDate(new Date()));
   const [reportEmployeeId, setReportEmployeeId] = useState('');
   const [reportEntries, setReportEntries] = useState<AttendanceEntry[]>([]);
+  const [reviewEmployeeId, setReviewEmployeeId] = useState('');
   const [employeePunchEvent, setEmployeePunchEvent] = useState<AttendanceEntry['type']>('entrada');
   const [attendanceAlerts, setAttendanceAlerts] = useState<AttendanceAlert[]>([]);
   const [sessionProcessingErrors, setSessionProcessingErrors] = useState<SessionProcessingError[]>([]);
@@ -218,6 +219,10 @@ export default function DashboardPage() {
   const pendingAttendance = useMemo(
     () => attendance.filter((entry) => entry.status === 'pending'),
     [attendance],
+  );
+  const filteredPendingAttendance = useMemo(
+    () => pendingAttendance.filter((entry) => !reviewEmployeeId || entry.employeeId === reviewEmployeeId),
+    [pendingAttendance, reviewEmployeeId],
   );
   const isManager = userRole === 'admin' || userRole === 'gestor';
   const isAdmin = userRole === 'admin';
@@ -2575,6 +2580,21 @@ export default function DashboardPage() {
             <p className="subtle">
               A revisão altera apenas o status. Data, hora, tipo e demais dados da marcação permanecem preservados.
             </p>
+            <div className="form-grid" style={{ marginBottom: 16 }}>
+              <div className="field">
+                <label htmlFor="reviewEmployeeId">Funcionário</label>
+                <select
+                  id="reviewEmployeeId"
+                  value={reviewEmployeeId}
+                  onChange={(event) => setReviewEmployeeId(event.target.value)}
+                >
+                  <option value="">Todos os funcionários</option>
+                  {employees.map((employee) => (
+                    <option key={employee.id} value={employee.id}>{employee.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
             <div className="table-wrap review-table-wrap">
               <table>
                 <thead>
@@ -2590,7 +2610,7 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {pendingAttendance.map((entry) => (
+                  {filteredPendingAttendance.map((entry) => (
                     <tr key={entry.id}>
                       <td>{entry.employeeName}</td>
                       <td>{entry.date}</td>
@@ -2627,8 +2647,14 @@ export default function DashboardPage() {
                       </td>
                     </tr>
                   ))}
-                  {!loading && pendingAttendance.length === 0 ? (
-                    <tr><td colSpan={8} className="empty">Não há marcações pendentes para revisar.</td></tr>
+                  {!loading && filteredPendingAttendance.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="empty">
+                        {reviewEmployeeId
+                          ? 'Não há marcações pendentes para este funcionário.'
+                          : 'Não há marcações pendentes para revisar.'}
+                      </td>
+                    </tr>
                   ) : null}
                 </tbody>
               </table>
