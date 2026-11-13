@@ -42,6 +42,8 @@ type Employee = {
   status: string;
 };
 
+type Administrator = { id: string; nome: string; email: string; status: string };
+
 type AttendanceEntry = {
   id: string;
   employeeId: string;
@@ -197,6 +199,10 @@ export default function DashboardPage() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [linkingEmployeeId, setLinkingEmployeeId] = useState('');
   const [resettingPasswordEmployeeId, setResettingPasswordEmployeeId] = useState('');
+  const [administrators, setAdministrators] = useState<Administrator[]>([]);
+  const [administratorsError, setAdministratorsError] = useState('');
+  const [administratorsLoading, setAdministratorsLoading] = useState(false);
+  const [administratorAction, setAdministratorAction] = useState<{ id: string; action: 'name' | 'password' } | null>(null);
   const [reportFrom, setReportFrom] = useState(() => {
     return `${localDate(new Date()).slice(0, 7)}-01`;
   });
@@ -232,6 +238,31 @@ export default function DashboardPage() {
   const isManager = userRole === 'admin' || userRole === 'gestor';
   const isAdmin = userRole === 'admin';
   const isEmployee = userRole === 'funcionario';
+  const loadAdministrators = useCallback(async () => {
+    if (!supabase || !companyId) return;
+    setAdministratorsLoading(true);
+    setAdministratorsError('');
+    try {
+      const { data, error } = await supabase.from('profiles')
+        .select('id, nome, email, status')
+        .eq('company_id', companyId).eq('role', 'admin').order('nome');
+      if (error) {
+        setAdministrators([]);
+        setAdministratorsError(`Não foi possível carregar os administradores: ${error.message}`);
+      } else {
+        setAdministrators(data || []);
+      }
+    } catch (error) {
+      setAdministrators([]);
+      setAdministratorsError(`Não foi possível carregar os administradores: ${error instanceof Error ? error.message : 'erro de conexão desconhecido'}`);
+    } finally {
+      setAdministratorsLoading(false);
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    if (isAdmin && activeView === 'administrators') void loadAdministrators();
+  }, [activeView, isAdmin, loadAdministrators]);
   const employeeOvertimeSchedule = useMemo(
     () => parseWorkSchedule(employees[0]?.shift),
     [employees],
@@ -1221,6 +1252,58 @@ export default function DashboardPage() {
     setMessage(`Administrador ${result.name || name} cadastrado com acesso completo à empresa.`);
     setSaving(false);
     form.reset();
+    await loadAdministrators();
+  };
+
+  const handleAdministratorChange = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!supabase || !administratorAction) {
+      setErrorMessage('Não foi possível identificar a operação ou a sessão.');
+      return;
+    }
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const value = String(formData.get('value') || '').trim();
+    const currentPassword = String(formData.get('currentPassword') || '');
+    const passwordValue = String(formData.get('value') || '');
+    if (!currentPassword || (administratorAction.action === 'name' ? !value : !passwordValue)) {
+      setErrorMessage('Preencha os dados e sua senha atual.');
+      return;
+    }
+    setSaving(true);
+    setMessage('');
+    setErrorMessage('');
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error || !data.session) {
+        setErrorMessage('Sua sessão expirou. Entre novamente.');
+        return;
+      }
+      const response = await fetch(`/api/administrators/${administratorAction.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session.access_token}` },
+        body: JSON.stringify(administratorAction.action === 'name'
+          ? { action: 'name', name: value, currentPassword }
+          : { action: 'password', password: passwordValue, currentPassword }),
+      });
+      const result: { success?: boolean; error?: string; changed?: boolean } = await response.json();
+      if (!response.ok || !result.success) {
+        setErrorMessage(result.error || 'Não foi possível alterar o administrador.');
+        if (result.changed || response.status === 409) {
+          setAdministratorAction(null);
+          await loadAdministrators();
+        }
+        return;
+      }
+      setMessage(administratorAction.action === 'name' ? 'Nome do administrador atualizado.' : 'Senha do administrador alterada.');
+      setAdministratorAction(null);
+      form.reset();
+      await loadAdministrators();
+    } catch (error) {
+      setErrorMessage(`Não foi possível confirmar a alteração: ${error instanceof Error ? error.message : 'erro de conexão desconhecido'}. Verifique a conta antes de tentar novamente.`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleAttendanceSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -2765,6 +2848,63 @@ export default function DashboardPage() {
                 </button>
               </div>
             </form>
+            <div style={{ marginTop: 28 }}>
+              <h3>Administradores cadastrados</h3>
+              {administratorsError ? <p role="alert" className="employee-overtime-error">{administratorsError}</p> : null}
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Nome</th><th>E-mail</th><th>Situação</th><th>Ações</th></tr></thead>
+                  <tbody>
+                    {administrators.map((administrator) => (
+                      <tr key={administrator.id}>
+                        <td>{administrator.nome}</td><td>{administrator.email}</td><td>{administrator.status}</td>
+                        <td>
+                          <div className="employee-actions">
+                            <button type="button" className="btn secondary compact" disabled={saving || administrator.status !== 'ativo'}
+                              onClick={() => setAdministratorAction({ id: administrator.id, action: 'name' })}>
+                              Editar nome
+                            </button>
+                            <button type="button" className="btn secondary compact" disabled={saving || administrator.status !== 'ativo'}
+                              onClick={() => setAdministratorAction({ id: administrator.id, action: 'password' })}>
+                              Alterar senha
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {!administratorsLoading && !administratorsError && administrators.length === 0 ? (
+                      <tr><td colSpan={4} className="empty">Nenhum administrador encontrado.</td></tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+              {administratorsLoading ? <p className="subtle">Carregando administradores...</p> : null}
+              {administratorAction ? (
+                <form key={`${administratorAction.id}-${administratorAction.action}`} onSubmit={handleAdministratorChange} style={{ marginTop: 18 }}>
+                  <h4>{administratorAction.action === 'name' ? 'Editar nome' : 'Alterar senha'}: {administrators.find((item) => item.id === administratorAction.id)?.nome}</h4>
+                  <div className="form-grid">
+                    <div className="field">
+                      <label htmlFor="administratorChangeValue">{administratorAction.action === 'name' ? 'Nome completo' : 'Nova senha'}</label>
+                      <input id="administratorChangeValue" name="value"
+                        type={administratorAction.action === 'name' ? 'text' : 'password'}
+                        defaultValue={administratorAction.action === 'name' ? administrators.find((item) => item.id === administratorAction.id)?.nome : ''}
+                        autoComplete={administratorAction.action === 'name' ? 'name' : 'new-password'}
+                        minLength={administratorAction.action === 'name' ? 2 : 8}
+                        maxLength={administratorAction.action === 'name' ? 100 : 72} required />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="administratorCurrentPassword">Sua senha atual para confirmar</label>
+                      <input id="administratorCurrentPassword" name="currentPassword" type="password" autoComplete="current-password" maxLength={256} required />
+                    </div>
+                  </div>
+                  <p className="subtle">Confirme com sua própria senha. Ao alterar a senha de outra pessoa, entregue a nova senha em particular.</p>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <button type="submit" className="btn primary" disabled={saving}>{saving ? 'Salvando...' : 'Salvar alteração'}</button>
+                    <button type="button" className="btn secondary" disabled={saving} onClick={() => setAdministratorAction(null)}>Cancelar</button>
+                  </div>
+                </form>
+              ) : null}
+            </div>
           </div>
         )}
 

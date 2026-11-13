@@ -102,6 +102,8 @@ O campo CPF acrescenta pontos e traço durante a digitação. CPFs já cadastrad
 
 Administradores ativos podem cadastrar outros administradores pelo item **Administradores** no painel. Cada novo administrador recebe acesso completo somente à empresa do administrador que o cadastrou. Gestores não podem criar contas administrativas. A senha inicial deve ser entregue em particular; o novo administrador pode entrar com seu e-mail e senha.
 
+Na mesma tela, administradores ativos podem listar os administradores da empresa, alterar o nome ou redefinir a própria senha e a de outro administrador ativo. Cada alteração exige a senha atual de quem executa a operação e é registrada na auditoria, sem armazenar senhas. A nova senha deve ser entregue em particular; o e-mail de acesso não é alterado por essa tela.
+
 Cadastros antigos sem conta podem continuar usando **Vincular login** após criar sua conta em **Authentication → Users**. O funcionário verá apenas **Meu ponto**. A função `record_own_attendance` registra o horário do servidor e não aceita horário enviado pelo navegador. Na versão com a migration de jornadas contínuas, o funcionário escolhe entre iniciar/retomar o intervalo ou encerrar a jornada; jornadas podem cruzar a meia-noite e não são encerradas automaticamente. Marcações rejeitadas aparecem no histórico, mas não avançam a sequência; o funcionário pode refazer aquela etapa.
 
 As marcações, consultas, relatórios e horas extras usam o fuso de Mato Grosso do Sul (`America/Campo_Grande`), independentemente do fuso configurado no aparelho. A marcação própria usa o horário do servidor; os horários digitados pelo administrador são interpretados nesse mesmo fuso. A mudança não altera automaticamente registros antigos.
