@@ -4,16 +4,15 @@ import { FormEvent, useCallback, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import FaceCamera from '@/components/FaceCamera';
-import { isDuplicateFaceAttendanceError } from '@/lib/face-attendance';
+import { facePunchOptions, isRetryableFaceAttendanceError, type FacePunchType } from '@/lib/face-attendance';
 import { FaceRecognitionError } from '@/lib/face-recognition';
 import { supabase } from '@/lib/supabase';
 
 type LoginMode = 'face' | 'face-action' | 'manual' | 'processing' | 'punch-error';
-type FacePunchType = 'entrada' | 'saida_almoco' | 'retorno_almoco' | 'saida';
-
 type FaceAuthResult = {
   error?: string;
   matched?: boolean;
+  employeeId?: string;
   employeeName?: string;
   tokenHash?: string;
   challengeId?: string;
@@ -60,6 +59,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [pendingFacePunch, setPendingFacePunch] = useState<{ employeeName: string; challengeId: string } | null>(null);
+  const [lastFacePunchType, setLastFacePunchType] = useState<string | null>(null);
   const facePunchInFlight = useRef(false);
 
   const handleCameraError = useCallback((cameraError: Error) => {
@@ -123,7 +123,7 @@ export default function LoginPage() {
       handleFaceFailure('Rosto não reconhecido. Confira a iluminação e tente novamente.');
       return;
     }
-    if (!result.employeeName || !result.tokenHash || !result.challengeId) {
+    if (!result.employeeId || !result.employeeName || !result.tokenHash || !result.challengeId) {
       setMode('manual');
       setError('O servidor não concluiu a validação facial. Use o login manual.');
       return;
@@ -149,6 +149,27 @@ export default function LoginPage() {
     }
 
     setPendingFacePunch({ employeeName: result.employeeName, challengeId: result.challengeId });
+    try {
+      const { data: lastPunch, error: lastPunchError } = await supabase
+        .from('attendance_records')
+        .select('event_type')
+        .eq('employee_id', result.employeeId)
+        .neq('status', 'rejected')
+        .order('recorded_at', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (lastPunchError) {
+        setMode('punch-error');
+        setError(`Não foi possível consultar a última marcação: ${lastPunchError.message}. Abra Meu ponto para continuar.`);
+        return;
+      }
+      setLastFacePunchType(lastPunch?.event_type ?? null);
+    } catch (error) {
+      setMode('punch-error');
+      setError(`Não foi possível consultar a última marcação: ${error instanceof Error ? error.message : 'erro de conexão desconhecido'}. Abra Meu ponto para continuar.`);
+      return;
+    }
     setMode('face-action');
   };
 
@@ -195,7 +216,10 @@ export default function LoginPage() {
       return;
     }
     if (attendanceError || !recordId) {
-      if (isDuplicateFaceAttendanceError(attendanceError)) {
+      if (isRetryableFaceAttendanceError(attendanceError)) {
+        if (attendanceError.message.startsWith('A jornada anterior foi encerrada.')) {
+          setLastFacePunchType('saida');
+        }
         setMode('face-action');
         setError(`${attendanceError.message} Escolha outra marcação ou abra Meu ponto.`);
         facePunchInFlight.current = false;
@@ -344,9 +368,10 @@ export default function LoginPage() {
         {mode === 'face-action' ? (
           <div style={{ display: 'grid', gap: 10 }}>
             <p className="subtle">
-              A virada do dia não encerra a jornada. Marcações iguais em sequência e novas entradas com jornada aberta são bloqueadas; outras marcações fora da sequência serão sinalizadas para revisão.
+              A virada do dia não encerra a jornada. Após a saída definitiva, a próxima marcação é uma entrada.
+              Marcações iguais em sequência e novas entradas com jornada aberta são bloqueadas; outras marcações fora da sequência serão sinalizadas para revisão.
             </p>
-            {(Object.keys(facePunchLabels) as FacePunchType[]).map((eventType) => (
+            {facePunchOptions(lastFacePunchType).map((eventType) => (
               <button
                 key={eventType}
                 type="button"

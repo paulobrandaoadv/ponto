@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json(
-    { matched: true, employeeName: employee.nome, tokenHash, challengeId },
+    { matched: true, employeeId: employee.id, employeeName: employee.nome, tokenHash, challengeId },
     { headers: { 'Cache-Control': 'no-store' } },
   );
 }

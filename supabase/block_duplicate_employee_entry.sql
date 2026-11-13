@@ -46,6 +46,10 @@ begin
     raise exception 'A última marcação já é deste tipo. Não é possível registrá-la novamente em sequência. Se necessário, solicite a revisão ao administrador.';
   end if;
 
+  if last_event = 'saida' and new.event_type <> 'entrada' then
+    raise exception 'A jornada anterior foi encerrada. A próxima marcação deve ser uma entrada.';
+  end if;
+
   return new;
 end;
 $$;
