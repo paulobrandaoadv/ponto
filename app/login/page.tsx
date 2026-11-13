@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import FaceCamera from '@/components/FaceCamera';
+import PasswordInput from '@/components/PasswordInput';
 import { facePunchOptions, isRetryableFaceAttendanceError, type FacePunchType } from '@/lib/face-attendance';
 import { FaceRecognitionError } from '@/lib/face-recognition';
 import { supabase } from '@/lib/supabase';
@@ -57,7 +58,6 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
   const [pendingFacePunch, setPendingFacePunch] = useState<{ employeeName: string; challengeId: string } | null>(null);
   const [lastFacePunchType, setLastFacePunchType] = useState<string | null>(null);
   const facePunchInFlight = useRef(false);
@@ -397,16 +397,7 @@ export default function LoginPage() {
               </div>
               <div>
                 <label htmlFor="password">Senha</label>
-                <div className="password-field">
-                  <input id="password" name="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder="Sua senha" required />
-                  <button type="button" className="password-toggle" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'} aria-pressed={showPassword}>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
-                      <circle cx="12" cy="12" r="3" />
-                      {showPassword ? <path d="M3 3l18 18" /> : null}
-                    </svg>
-                  </button>
-                </div>
+                <PasswordInput id="password" name="password" autoComplete="current-password" placeholder="Sua senha" required />
               </div>
               <button type="submit" disabled={loading} className="btn primary">
                 {loading ? 'Entrando...' : 'Entrar'}

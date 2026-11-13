@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 're
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import FaceCamera from '@/components/FaceCamera';
+import PasswordInput from '@/components/PasswordInput';
 import {
   calculateMonthlyOvertime,
   DEFAULT_WORK_SCHEDULE,
@@ -2424,10 +2425,9 @@ export default function DashboardPage() {
                       </div>
                       <div className="field">
                         <label htmlFor="accountPassword">Senha inicial de acesso</label>
-                        <input
+                        <PasswordInput
                           id="accountPassword"
                           name="accountPassword"
-                          type="password"
                           autoComplete="new-password"
                           minLength={8}
                           maxLength={72}
@@ -2550,20 +2550,18 @@ export default function DashboardPage() {
                                 <form onSubmit={handleResetEmployeePassword} className="employee-action-form">
                                   <input type="hidden" name="employeeId" value={employee.id} />
                                   <label htmlFor={`newPassword-${employee.id}`}>Nova senha temporária</label>
-                                  <input
+                                  <PasswordInput
                                     id={`newPassword-${employee.id}`}
                                     name="password"
-                                    type="password"
                                     autoComplete="new-password"
                                     minLength={8}
                                     maxLength={72}
                                     required
                                   />
                                   <label htmlFor={`confirmPassword-${employee.id}`}>Confirme a senha</label>
-                                  <input
+                                  <PasswordInput
                                     id={`confirmPassword-${employee.id}`}
                                     name="passwordConfirmation"
-                                    type="password"
                                     autoComplete="new-password"
                                     minLength={8}
                                     maxLength={72}
@@ -2830,10 +2828,9 @@ export default function DashboardPage() {
                 </div>
                 <div className="field">
                   <label htmlFor="administratorPassword">Senha inicial</label>
-                  <input
+                  <PasswordInput
                     id="administratorPassword"
                     name="administratorPassword"
-                    type="password"
                     autoComplete="new-password"
                     minLength={8}
                     maxLength={72}
@@ -2885,16 +2882,18 @@ export default function DashboardPage() {
                   <div className="form-grid">
                     <div className="field">
                       <label htmlFor="administratorChangeValue">{administratorAction.action === 'name' ? 'Nome completo' : 'Nova senha'}</label>
-                      <input id="administratorChangeValue" name="value"
-                        type={administratorAction.action === 'name' ? 'text' : 'password'}
-                        defaultValue={administratorAction.action === 'name' ? administrators.find((item) => item.id === administratorAction.id)?.nome : ''}
-                        autoComplete={administratorAction.action === 'name' ? 'name' : 'new-password'}
-                        minLength={administratorAction.action === 'name' ? 2 : 8}
-                        maxLength={administratorAction.action === 'name' ? 100 : 72} required />
+                      {administratorAction.action === 'name' ? (
+                        <input id="administratorChangeValue" name="value" type="text"
+                          defaultValue={administrators.find((item) => item.id === administratorAction.id)?.nome}
+                          autoComplete="name" minLength={2} maxLength={100} required />
+                      ) : (
+                        <PasswordInput id="administratorChangeValue" name="value"
+                          autoComplete="new-password" minLength={8} maxLength={72} required />
+                      )}
                     </div>
                     <div className="field">
                       <label htmlFor="administratorCurrentPassword">Sua senha atual para confirmar</label>
-                      <input id="administratorCurrentPassword" name="currentPassword" type="password" autoComplete="current-password" maxLength={256} required />
+                      <PasswordInput id="administratorCurrentPassword" name="currentPassword" autoComplete="current-password" maxLength={256} required />
                     </div>
                   </div>
                   <p className="subtle">Confirme com sua própria senha. Ao alterar a senha de outra pessoa, entregue a nova senha em particular.</p>
