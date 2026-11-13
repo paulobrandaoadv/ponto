@@ -63,3 +63,36 @@ export function buildReportTimesheet(
     a.entry.recordedAt.localeCompare(b.entry.recordedAt));
   return { rows, anomalies };
 }
+
+export function buildTimesheetExportRows(timesheet: ReturnType<typeof buildReportTimesheet>) {
+  const headers = ['Funcionário', 'Data', 'Entrada', 'Saída intervalo', 'Retorno', 'Saída definitiva', 'Situação'];
+  const rows = timesheet.rows.map((row) => {
+    const punches = [row.entry, ...row.breakStarts, ...row.breakEnds, ...(row.exit ? [row.exit] : [])];
+    return [
+      row.employee.name,
+      row.date.split('-').reverse().join('/'),
+      formatReportTimesheetPunch(row.entry, row.date),
+      row.breakStarts.map((punch) => formatReportTimesheetPunch(punch, row.date)).join(' / '),
+      row.breakEnds.map((punch) => formatReportTimesheetPunch(punch, row.date)).join(' / '),
+      row.exit ? formatReportTimesheetPunch(row.exit, row.date) : '',
+      [
+        row.exit ? '' : 'Jornada em aberto',
+        punches.some((punch) => punch.status === 'pending') ? '* = Pendente' : 'Marcações confirmadas',
+      ].filter(Boolean).join('; '),
+    ];
+  });
+  for (const { employee, punch } of timesheet.anomalies) {
+    const date = attendanceDate(new Date(punch.recordedAt));
+    const value = formatReportTimesheetPunch(punch, date);
+    rows.push([
+      employee.name,
+      date.split('-').reverse().join('/'),
+      punch.type === 'entrada' ? value : '',
+      punch.type === 'saida_almoco' ? value : '',
+      punch.type === 'retorno_almoco' ? value : '',
+      punch.type === 'saida' ? value : '',
+      `Inconsistente: ${punch.type} (${punch.status === 'pending' ? 'Pendente' : 'Confirmada'})`,
+    ]);
+  }
+  return [headers, ...rows];
+}

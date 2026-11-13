@@ -26,7 +26,7 @@ import { cpfDigits, cpfSearchPattern, displayCpf, formatCpfInput, sameCpf } from
 import { calculateWorkedHours, getEmployeePunchEvent, getWorkIntervals } from '@/lib/attendance-worked';
 import { dashboardPeople } from '@/lib/dashboard-people';
 import { calculateReportOvertime } from '@/lib/report-overtime';
-import { buildReportTimesheet, formatReportTimesheetPunch } from '@/lib/report-timesheet';
+import { buildReportTimesheet, buildTimesheetExportRows, formatReportTimesheetPunch } from '@/lib/report-timesheet';
 
 type Employee = {
   id: string;
@@ -202,6 +202,7 @@ export default function DashboardPage() {
   });
   const [reportTo, setReportTo] = useState(() => localDate(new Date()));
   const [reportEmployeeId, setReportEmployeeId] = useState('');
+  const [reportExportType, setReportExportType] = useState<'completa' | 'dia'>('completa');
   const [reportEntries, setReportEntries] = useState<AttendanceEntry[]>([]);
   const [reviewEmployeeId, setReviewEmployeeId] = useState('');
   const [employeePunchEvent, setEmployeePunchEvent] = useState<AttendanceEntry['type']>('entrada');
@@ -807,6 +808,10 @@ export default function DashboardPage() {
   };
 
   const handleReportExport = () => {
+    if (reportExportType === 'dia' && (!isAdmin || !reportTimesheet)) {
+      setErrorMessage('Não foi possível exportar o quadro por dia. Consulte o período novamente.');
+      return;
+    }
     const headers = [
       'Funcionário',
       'Data',
@@ -831,7 +836,10 @@ export default function DashboardPage() {
       entry.accuracy?.toString() || '',
       entry.notes,
     ]);
-    const csv = [headers, ...rows]
+    const exportRows = reportExportType === 'dia' && reportTimesheet
+      ? buildTimesheetExportRows(reportTimesheet)
+      : [headers, ...rows];
+    const csv = exportRows
       .map((row) => row.map((field) => csvField(field)).join(';'))
       .join('\r\n');
     const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
@@ -841,7 +849,8 @@ export default function DashboardPage() {
     const employeeSuffix = reportEmployeeId
       ? `_${employees.find((employee) => employee.id === reportEmployeeId)?.name.replace(/[^A-Za-z0-9-]+/g, '_') || 'funcionario'}`
       : '';
-    downloadLink.download = `anbelo-ponto${employeeSuffix}_${reportFrom}_${reportTo}.csv`;
+    const typeSuffix = reportExportType === 'dia' ? '_por_dia' : '';
+    downloadLink.download = `anbelo-ponto${typeSuffix}${employeeSuffix}_${reportFrom}_${reportTo}.csv`;
     downloadLink.click();
     URL.revokeObjectURL(url);
   };
@@ -2972,11 +2981,23 @@ export default function DashboardPage() {
                 <button type="submit" className="btn primary" disabled={reportLoading || loading}>
                   {reportLoading ? 'Consultando...' : 'Consultar período'}
                 </button>
+                {isAdmin ? (
+                  <div className="field">
+                    <label htmlFor="reportExportType">Tipo de exportação</label>
+                    <select id="reportExportType" value={reportExportType} disabled={reportLoading}
+                      onChange={(event) => setReportExportType(event.target.value === 'dia' ? 'dia' : 'completa')}>
+                      <option value="completa">Consulta completa</option>
+                      <option value="dia">Por dia</option>
+                    </select>
+                  </div>
+                ) : null}
                 <button
                   type="button"
                   className="btn secondary"
                   onClick={handleReportExport}
-                  disabled={!reportLoaded || reportEntries.length === 0}
+                  disabled={!reportLoaded || reportLoading || (reportExportType === 'dia'
+                    ? !reportTimesheet || (reportTimesheet.rows.length === 0 && reportTimesheet.anomalies.length === 0)
+                    : reportEntries.length === 0)}
                 >
                   Exportar CSV
                 </button>

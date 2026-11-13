@@ -22,7 +22,7 @@ const overtime = load('attendance-overtime', { './attendance-time': time, './att
 const { calculateReportOvertime } = load('report-overtime', {
   './attendance-time': time, './attendance-worked': worked, './attendance-overtime': overtime,
 });
-const { buildReportTimesheet, formatReportTimesheetPunch } = load('report-timesheet', {
+const { buildReportTimesheet, buildTimesheetExportRows, formatReportTimesheetPunch } = load('report-timesheet', {
   './attendance-time': time, './attendance-worked': worked,
 });
 const employee = (id, modalidade) => ({
@@ -88,6 +88,10 @@ test('timesheet places overnight exits on the entry date even beyond the report 
   assert.equal(result.rows[0].exit.status, 'pending');
   assert.equal(formatReportTimesheetPunch(result.rows[0].entry, result.rows[0].date), '20:00');
   assert.equal(formatReportTimesheetPunch(result.rows[0].exit, result.rows[0].date), '05:00 (11/11/2026) *');
+  assert.deepEqual(plain(buildTimesheetExportRows(result)), [
+    ['Funcionário', 'Data', 'Entrada', 'Saída intervalo', 'Retorno', 'Saída definitiva', 'Situação'],
+    ['night', '10/11/2026', '20:00', '23:00', '00:30 (11/11/2026)', '05:00 (11/11/2026) *', '* = Pendente'],
+  ]);
   assert.equal(buildReportTimesheet(employees, punches, '2026-11-11', '2026-11-11').rows.length, 0);
 });
 
@@ -111,5 +115,9 @@ test('timesheet preserves multiple breaks, open shifts and flags inconsistent pu
   assert.deepEqual(plain(result.anomalies.map(({ employee, punch }) => [employee.id, punch.type])), [
     ['a', 'entrada'], ['b', 'saida_almoco'],
   ]);
+  const exported = plain(buildTimesheetExportRows(result));
+  assert.deepEqual(exported[1], ['a', '10/11/2026', '07:00', '09:00 * / 11:00', '09:30 / 11:30', '', 'Jornada em aberto; * = Pendente']);
+  assert.deepEqual(exported[2], ['a', '10/11/2026', '17:00', '', '', '', 'Inconsistente: entrada (Confirmada)']);
+  assert.deepEqual(exported[3], ['b', '10/11/2026', '', '07:00', '', '', 'Inconsistente: saida_almoco (Confirmada)']);
   assert.throws(() => buildReportTimesheet([], punches, '2026-11-10', '2026-11-10'), /funcionário que não foi carregado/);
 });
