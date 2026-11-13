@@ -3032,63 +3032,51 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <p className="subtle">{filteredAttendanceAlerts.length} alerta(s) encontrados.</p>
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Funcionário</th>
-                        <th>Entrada</th>
-                        <th>Saída</th>
-                        <th>Trabalhadas</th>
-                        <th>Intervalos</th>
-                        <th>Alerta / gravidade</th>
-                        <th>Situação / providência</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredAttendanceAlerts.map((alert) => (
-                        <tr key={alert.id}>
-                          <td>{alert.employeeName}</td>
-                          <td>{alert.startedAt ? `${localDate(new Date(alert.startedAt))} ${localTime(new Date(alert.startedAt))}` : '—'}</td>
-                          <td>{alert.endedAt ? `${localDate(new Date(alert.endedAt))} ${localTime(new Date(alert.endedAt))}` : 'Em andamento'}</td>
-                          <td>{alert.workedMinutes === null ? '—' : formatOvertimeMinutes(alert.workedMinutes)}</td>
-                          <td>{alert.breakMinutes === null ? '—' : formatOvertimeMinutes(alert.breakMinutes)}</td>
-                          <td>
-                            <strong>{displayAlertType(alert.alertType)}</strong>
-                            <div>{alert.severity === 'critical' ? 'Crítico' : alert.severity === 'warning' ? 'Atenção' : 'Informativo'}</div>
-                            <div className="subtle">{alert.description}</div>
-                            {alert.attendanceRecordId ? <div className="subtle">Marcação: {alert.attendanceRecordId}</div> : null}
-                          </td>
-                          <td>
-                            <strong>{displayAlertStatus(alert.status)}</strong>
-                            {alert.resolutionNotes ? <div className="subtle">{alert.resolutionNotes}</div> : null}
-                            {alert.status !== 'resolved' ? (
-                              <div style={{ minWidth: 220 }}>
-                                <textarea
-                                  aria-label={`Justificativa para ${alert.employeeName}`}
-                                  placeholder="Justificativa/providência (obrigatória para resolver)"
-                                  value={alertNotes[alert.id] || ''}
-                                  onChange={(event) => setAlertNotes((current) => ({ ...current, [alert.id]: event.target.value }))}
-                                />
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                                  {alert.status === 'pending' ? (
-                                    <button type="button" className="btn secondary" disabled={saving} onClick={() => handleReviewAlert(alert, 'viewed')}>Visualizado</button>
-                                  ) : null}
-                                  {alert.status !== 'in_review' ? (
-                                    <button type="button" className="btn secondary" disabled={saving} onClick={() => handleReviewAlert(alert, 'in_review')}>Em análise</button>
-                                  ) : null}
-                                  <button type="button" className="btn primary" disabled={saving} onClick={() => handleReviewAlert(alert, 'resolved')}>Resolver</button>
-                                </div>
-                              </div>
-                            ) : null}
-                          </td>
-                        </tr>
-                      ))}
-                      {filteredAttendanceAlerts.length === 0 ? (
-                        <tr><td colSpan={7} className="empty">Nenhum alerta corresponde aos filtros.</td></tr>
-                      ) : null}
-                    </tbody>
-                  </table>
+                <div className="attendance-alert-list">
+                  {filteredAttendanceAlerts.map((alert) => (
+                    <article className="attendance-alert-card" key={alert.id}>
+                      <h4>{alert.employeeName}</h4>
+                      <dl className="attendance-alert-details">
+                        <div><dt>Entrada</dt><dd>{alert.startedAt ? `${localDate(new Date(alert.startedAt))} ${localTime(new Date(alert.startedAt))}` : '—'}</dd></div>
+                        <div><dt>Saída</dt><dd>{alert.endedAt ? `${localDate(new Date(alert.endedAt))} ${localTime(new Date(alert.endedAt))}` : 'Em andamento'}</dd></div>
+                        <div><dt>Trabalhadas</dt><dd>{alert.workedMinutes === null ? '—' : formatOvertimeMinutes(alert.workedMinutes)}</dd></div>
+                        <div><dt>Intervalos</dt><dd>{alert.breakMinutes === null ? '—' : formatOvertimeMinutes(alert.breakMinutes)}</dd></div>
+                      </dl>
+                      <div className="attendance-alert-description">
+                        <strong>{displayAlertType(alert.alertType)}</strong>
+                        <div>{alert.severity === 'critical' ? 'Crítico' : alert.severity === 'warning' ? 'Atenção' : 'Informativo'}</div>
+                        <div className="subtle">{alert.description}</div>
+                        {alert.attendanceRecordId ? <div className="subtle">Marcação: {alert.attendanceRecordId}</div> : null}
+                      </div>
+                      <div className="attendance-alert-action">
+                        <strong>Situação / providência</strong>
+                        <div>{displayAlertStatus(alert.status)}</div>
+                        {alert.resolutionNotes ? <div className="subtle">{alert.resolutionNotes}</div> : null}
+                        {alert.status !== 'resolved' ? (
+                          <>
+                            <textarea
+                              aria-label={`Justificativa para ${alert.employeeName}`}
+                              placeholder="Justificativa/providência (obrigatória para resolver)"
+                              value={alertNotes[alert.id] || ''}
+                              onChange={(event) => setAlertNotes((current) => ({ ...current, [alert.id]: event.target.value }))}
+                            />
+                            <div className="attendance-alert-buttons">
+                              {alert.status === 'pending' ? (
+                                <button type="button" className="btn secondary" disabled={saving} onClick={() => handleReviewAlert(alert, 'viewed')}>Visualizado</button>
+                              ) : null}
+                              {alert.status !== 'in_review' ? (
+                                <button type="button" className="btn secondary" disabled={saving} onClick={() => handleReviewAlert(alert, 'in_review')}>Em análise</button>
+                              ) : null}
+                              <button type="button" className="btn primary" disabled={saving} onClick={() => handleReviewAlert(alert, 'resolved')}>Resolver</button>
+                            </div>
+                          </>
+                        ) : null}
+                      </div>
+                    </article>
+                  ))}
+                  {filteredAttendanceAlerts.length === 0 ? (
+                    <p className="empty">Nenhum alerta corresponde aos filtros.</p>
+                  ) : null}
                 </div>
               </>
             )}

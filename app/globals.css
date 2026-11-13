@@ -656,6 +656,52 @@ textarea:focus-visible {
   font-size: 0.76rem;
 }
 
+.attendance-alert-list {
+  display: grid;
+  gap: 14px;
+}
+
+.attendance-alert-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+
+.attendance-alert-card h4 {
+  margin: 0 0 12px;
+}
+
+.attendance-alert-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 10px 16px;
+  margin: 0 0 14px;
+}
+
+.attendance-alert-details dt {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.attendance-alert-details dd {
+  margin: 3px 0 0;
+}
+
+.attendance-alert-action {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.attendance-alert-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .table-wrap {
   width: 100%;
   min-width: 0;
