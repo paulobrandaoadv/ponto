@@ -2977,7 +2977,7 @@ export default function DashboardPage() {
                   </select>
                 </div>
               </div>
-              <div style={{ marginTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ marginTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                 <button type="submit" className="btn primary" disabled={reportLoading || loading}>
                   {reportLoading ? 'Consultando...' : 'Consultar período'}
                 </button>
