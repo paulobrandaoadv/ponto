@@ -26,6 +26,7 @@ import { cpfDigits, cpfSearchPattern, displayCpf, formatCpfInput, sameCpf } from
 import { calculateWorkedHours, getEmployeePunchEvent, getWorkIntervals } from '@/lib/attendance-worked';
 import { dashboardPeople } from '@/lib/dashboard-people';
 import { calculateReportOvertime } from '@/lib/report-overtime';
+import { buildReportTimesheet, formatReportTimesheetPunch } from '@/lib/report-timesheet';
 
 type Employee = {
   id: string;
@@ -216,6 +217,7 @@ export default function DashboardPage() {
   const [alertTo, setAlertTo] = useState('');
   const [alertNotes, setAlertNotes] = useState<Record<string, string>>({});
   const [reportOvertime, setReportOvertime] = useState<ReturnType<typeof calculateReportOvertime>>([]);
+  const [reportTimesheet, setReportTimesheet] = useState<ReturnType<typeof buildReportTimesheet> | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportLoaded, setReportLoaded] = useState(false);
   const pendingAttendance = useMemo(
@@ -762,17 +764,20 @@ export default function DashboardPage() {
       ? employees.filter((employee) => employee.id === reportEmployeeId)
       : employees;
     try {
+      const reportPunches = records.map((record) => ({
+        id: record.id,
+        employeeId: record.employee_id,
+        type: record.event_type,
+        recordedAt: record.recorded_at,
+        status: record.status,
+      }));
       setReportOvertime(calculateReportOvertime(
         reportEmployees,
-        records.map((record) => ({
-          employeeId: record.employee_id,
-          type: record.event_type,
-          recordedAt: record.recorded_at,
-          status: record.status,
-        })),
+        reportPunches,
         reportFrom,
         reportTo,
       ));
+      setReportTimesheet(isAdmin ? buildReportTimesheet(reportEmployees, reportPunches, reportFrom, reportTo) : null);
     } catch (error) {
       setErrorMessage(`Não foi possível calcular as horas extras do relatório: ${error instanceof Error ? error.message : 'Erro desconhecido.'}`);
       setReportLoading(false);
@@ -2981,6 +2986,50 @@ export default function DashboardPage() {
 
             {reportLoaded ? (
               <>
+              {isAdmin && reportTimesheet ? (
+                <div style={{ marginTop: 22 }}>
+                  <h3>Quadro de marcações por jornada</h3>
+                  <p className="subtle">
+                    Cada linha pertence à data da entrada. Horários de outros dias incluem a data real;
+                    vários intervalos aparecem na mesma célula. * indica marcação pendente.
+                    Marcações rejeitadas não entram no quadro, mas permanecem no extrato abaixo.
+                  </p>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr><th>Funcionário</th><th>Data</th><th>Entrada</th><th>Saída intervalo</th><th>Retorno</th><th>Saída definitiva</th></tr>
+                      </thead>
+                      <tbody>
+                        {reportTimesheet.rows.map((row, index) => (
+                          <tr key={`${row.employee.id}-${row.entry.id || index}`}>
+                            <td>{row.employee.name}</td>
+                            <td>{row.date.split('-').reverse().join('/')}</td>
+                            <td>{formatReportTimesheetPunch(row.entry, row.date)}</td>
+                            <td>{row.breakStarts.length ? row.breakStarts.map((punch, i) => <div key={punch.id || i}>{formatReportTimesheetPunch(punch, row.date)}</div>) : '—'}</td>
+                            <td>{row.breakEnds.length ? row.breakEnds.map((punch, i) => <div key={punch.id || i}>{formatReportTimesheetPunch(punch, row.date)}</div>) : '—'}</td>
+                            <td>{row.exit ? formatReportTimesheetPunch(row.exit, row.date) : '—'}</td>
+                          </tr>
+                        ))}
+                        {reportTimesheet.rows.length === 0 ? (
+                          <tr><td colSpan={6} className="empty">Nenhuma jornada encontrada pela data de entrada no período.</td></tr>
+                        ) : null}
+                      </tbody>
+                    </table>
+                  </div>
+                  {reportTimesheet.anomalies.length ? (
+                    <div className="employee-overtime-error" role="alert">
+                      <p>As seguintes marcações não formam uma sequência válida e precisam de revisão:</p>
+                      <ul>
+                        {reportTimesheet.anomalies.map(({ employee, punch }, index) => (
+                          <li key={`${employee.id}-${punch.id || index}`}>
+                            {employee.name} — {punch.type === 'entrada' ? 'Entrada' : punch.type === 'saida_almoco' ? 'Saída almoço' : punch.type === 'retorno_almoco' ? 'Retorno almoço' : punch.type === 'saida' ? 'Saída' : punch.type} em {localDate(new Date(punch.recordedAt)).split('-').reverse().join('/')} {localTime(new Date(punch.recordedAt))}{punch.status === 'pending' ? ' (pendente)' : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               <div style={{ marginTop: 22 }}>
                 <h3>Horas extras no período</h3>
                 <p className="subtle">

@@ -22,6 +22,9 @@ const overtime = load('attendance-overtime', { './attendance-time': time, './att
 const { calculateReportOvertime } = load('report-overtime', {
   './attendance-time': time, './attendance-worked': worked, './attendance-overtime': overtime,
 });
+const { buildReportTimesheet, formatReportTimesheetPunch } = load('report-timesheet', {
+  './attendance-time': time, './attendance-worked': worked,
+});
 const employee = (id, modalidade) => ({
   id, name: id, modalidade, shift: '07:00-11:30|13:00-17:30', saturdayUntilNoon: false,
 });
@@ -70,4 +73,43 @@ test('reports invalid schedules and unknown employees instead of silently omitti
   assert.throws(() => calculateReportOvertime([], [
     { employeeId: 'missing', type: 'entrada', recordedAt: '2026-11-10T11:00:00Z', status: 'confirmed' },
   ], '2026-11-01', '2026-11-30'), /funcionário que não foi carregado/);
+});
+
+test('timesheet places overnight exits on the entry date even beyond the report period', () => {
+  const employees = [employee('night', 'mensalista')];
+  const punches = shift('night', [
+    '2026-11-11T00:00:00Z', '2026-11-11T03:00:00Z',
+    '2026-11-11T04:30:00Z', '2026-11-11T09:00:00Z',
+  ], 'pending');
+  const result = buildReportTimesheet(employees, punches, '2026-11-10', '2026-11-10');
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0].date, '2026-11-10');
+  assert.equal(time.attendanceDate(new Date(result.rows[0].exit.recordedAt)), '2026-11-11');
+  assert.equal(result.rows[0].exit.status, 'pending');
+  assert.equal(formatReportTimesheetPunch(result.rows[0].entry, result.rows[0].date), '20:00');
+  assert.equal(formatReportTimesheetPunch(result.rows[0].exit, result.rows[0].date), '05:00 (11/11/2026) *');
+  assert.equal(buildReportTimesheet(employees, punches, '2026-11-11', '2026-11-11').rows.length, 0);
+});
+
+test('timesheet preserves multiple breaks, open shifts and flags inconsistent punches', () => {
+  const punches = [
+    { employeeId: 'a', type: 'entrada', recordedAt: '2026-11-10T11:00:00Z', status: 'confirmed' },
+    { employeeId: 'a', type: 'saida_almoco', recordedAt: '2026-11-10T13:00:00Z', status: 'pending' },
+    { employeeId: 'a', type: 'retorno_almoco', recordedAt: '2026-11-10T13:30:00Z', status: 'confirmed' },
+    { employeeId: 'a', type: 'saida_almoco', recordedAt: '2026-11-10T15:00:00Z', status: 'confirmed' },
+    { employeeId: 'a', type: 'retorno_almoco', recordedAt: '2026-11-10T15:30:00Z', status: 'confirmed' },
+    { employeeId: 'a', type: 'saida', recordedAt: '2026-11-10T20:00:00Z', status: 'rejected' },
+    { employeeId: 'a', type: 'entrada', recordedAt: '2026-11-10T21:00:00Z', status: 'confirmed' },
+    { employeeId: 'b', type: 'saida_almoco', recordedAt: '2026-11-10T11:00:00Z', status: 'confirmed' },
+  ];
+  const result = buildReportTimesheet([employee('a', 'mensalista'), employee('b', 'diarista')], punches, '2026-11-10', '2026-11-10');
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0].breakStarts.length, 2);
+  assert.equal(result.rows[0].breakEnds.length, 2);
+  assert.equal(result.rows[0].breakStarts[0].status, 'pending');
+  assert.equal(result.rows[0].exit, undefined);
+  assert.deepEqual(plain(result.anomalies.map(({ employee, punch }) => [employee.id, punch.type])), [
+    ['a', 'entrada'], ['b', 'saida_almoco'],
+  ]);
+  assert.throws(() => buildReportTimesheet([], punches, '2026-11-10', '2026-11-10'), /funcionário que não foi carregado/);
 });
