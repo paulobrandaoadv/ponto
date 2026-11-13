@@ -190,6 +190,10 @@ export default function DashboardPage() {
   const [companyId, setCompanyId] = useState('');
   const [faceEnrolledEmployeeIds, setFaceEnrolledEmployeeIds] = useState<Set<string>>(new Set());
   const [faceEnrollmentEmployeeId, setFaceEnrollmentEmployeeId] = useState('');
+  const [faceEnrollmentError, setFaceEnrollmentError] = useState('');
+  const [faceEnrollmentResult, setFaceEnrollmentResult] = useState<{ message: string; warning?: string } | null>(null);
+  const [faceCameraUnavailable, setFaceCameraUnavailable] = useState(false);
+  const faceEnrollmentErrorRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -200,10 +204,13 @@ export default function DashboardPage() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [linkingEmployeeId, setLinkingEmployeeId] = useState('');
   const [resettingPasswordEmployeeId, setResettingPasswordEmployeeId] = useState('');
+  const employeeFormPanelRef = useRef<HTMLDivElement>(null);
+  const employeeActionFormRef = useRef<HTMLFormElement>(null);
   const [administrators, setAdministrators] = useState<Administrator[]>([]);
   const [administratorsError, setAdministratorsError] = useState('');
   const [administratorsLoading, setAdministratorsLoading] = useState(false);
   const [administratorAction, setAdministratorAction] = useState<{ id: string; action: 'name' | 'password' } | null>(null);
+  const administratorActionFormRef = useRef<HTMLFormElement>(null);
   const [reportFrom, setReportFrom] = useState(() => {
     return `${localDate(new Date()).slice(0, 7)}-01`;
   });
@@ -239,6 +246,25 @@ export default function DashboardPage() {
   const isManager = userRole === 'admin' || userRole === 'gestor';
   const isAdmin = userRole === 'admin';
   const isEmployee = userRole === 'funcionario';
+
+  useEffect(() => {
+    if (linkingEmployeeId || resettingPasswordEmployeeId) {
+      employeeActionFormRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  }, [linkingEmployeeId, resettingPasswordEmployeeId]);
+
+  useEffect(() => {
+    if (administratorAction) {
+      administratorActionFormRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  }, [administratorAction]);
+
+  useEffect(() => {
+    if (faceEnrollmentError) {
+      faceEnrollmentErrorRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  }, [faceEnrollmentError]);
+
   const loadAdministrators = useCallback(async () => {
     if (!supabase || !companyId) return;
     setAdministratorsLoading(true);
@@ -1597,12 +1623,12 @@ export default function DashboardPage() {
   };
 
   const handleFaceEnrollmentCameraError = useCallback((cameraError: Error) => {
-    setFaceEnrollmentEmployeeId('');
-    setErrorMessage(cameraError.message);
+    setFaceCameraUnavailable(true);
+    setFaceEnrollmentError(cameraError.message);
   }, []);
 
   const handleFaceEnrollmentCaptureError = useCallback((captureError: unknown) => {
-    setErrorMessage(
+    setFaceEnrollmentError(
       captureError instanceof Error
         ? captureError.message
         : 'Não foi possível processar o rosto. Tente novamente.',
@@ -1612,21 +1638,21 @@ export default function DashboardPage() {
   const handleFaceEnrollmentCapture = async (descriptor: number[]) => {
     const employee = employees.find((item) => item.id === faceEnrollmentEmployeeId);
     if (!supabase || !employee) {
-      setErrorMessage('Selecione um funcionário ativo com conta vinculada.');
-      return;
-    }
-
-    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !sessionData.session) {
-      setErrorMessage(sessionError?.message || 'Sua sessão expirou. Entre novamente.');
-      setFaceEnrollmentEmployeeId('');
-      router.push('/login');
+      setFaceEnrollmentError('Selecione um funcionário ativo com conta vinculada.');
       return;
     }
 
     setSaving(true);
-    setErrorMessage('');
+    setFaceEnrollmentError('');
     try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session) {
+        setErrorMessage(sessionError?.message || 'Sua sessão expirou. Entre novamente.');
+        setFaceEnrollmentEmployeeId('');
+        router.push('/login');
+        return;
+      }
+
       const response = await fetch('/api/faces/enroll', {
         method: 'POST',
         headers: {
@@ -1637,7 +1663,7 @@ export default function DashboardPage() {
       });
       const result = await response.json() as { error?: string; success?: boolean; warning?: string };
       if (!response.ok || !result.success) {
-        setErrorMessage(result.error || 'Não foi possível salvar o cadastro facial.');
+        setFaceEnrollmentError(result.error || 'Não foi possível salvar o cadastro facial.');
         return;
       }
 
@@ -1646,11 +1672,12 @@ export default function DashboardPage() {
         next.add(employee.id);
         return next;
       });
-      setFaceEnrollmentEmployeeId('');
-      setMessage(`Cadastro facial de ${employee.name} salvo. Nenhuma foto foi enviada ou armazenada.`);
-      if (result.warning) setErrorMessage(result.warning);
+      setFaceEnrollmentResult({
+        message: `Cadastro facial de ${employee.name} salvo. Nenhuma foto foi enviada ou armazenada.`,
+        warning: result.warning,
+      });
     } catch {
-      setErrorMessage('Não foi possível conectar ao servidor para salvar o cadastro facial.');
+      setFaceEnrollmentError('Não foi possível confirmar se o cadastro facial foi salvo. Atualize a página e confira a situação do funcionário antes de tentar novamente.');
     } finally {
       setSaving(false);
     }
@@ -2283,7 +2310,7 @@ export default function DashboardPage() {
 
         {isManager && activeView === 'employees' && (
           <div className="content-grid employee-management-grid">
-            <div className="panel">
+            <div className="panel" ref={employeeFormPanelRef}>
               <h3>{editingEmployee ? `Editar funcionário: ${editingEmployee.name}` : 'Cadastro de funcionário'}</h3>
               <form key={editingEmployee?.id || 'new-employee'} onSubmit={handleEmployeeSubmit}>
                 <div className="form-grid">
@@ -2501,6 +2528,9 @@ export default function DashboardPage() {
                                   className="btn secondary compact"
                                   onClick={() => {
                                     setFaceEnrollmentEmployeeId(employee.id);
+                                    setFaceEnrollmentError('');
+                                    setFaceEnrollmentResult(null);
+                                    setFaceCameraUnavailable(false);
                                     setErrorMessage('');
                                     setMessage('');
                                   }}
@@ -2524,10 +2554,11 @@ export default function DashboardPage() {
                             <button
                               type="button"
                               className="btn secondary compact"
-                              title="Redefinir senha"
-                              aria-label={`Redefinir senha de ${employee.name}`}
+                              title="Editar funcionário"
+                              aria-label={`Editar ${employee.name}`}
                               onClick={() => {
                                 setEditingEmployee(employee);
+                                employeeFormPanelRef.current?.scrollIntoView({ block: 'start', inline: 'nearest' });
                                 setErrorMessage('');
                                 setMessage('');
                               }}
@@ -2547,7 +2578,7 @@ export default function DashboardPage() {
                               <>
                             {employee.hasLogin ? (
                               resettingPasswordEmployeeId === employee.id ? (
-                                <form onSubmit={handleResetEmployeePassword} className="employee-action-form">
+                                <form ref={employeeActionFormRef} onSubmit={handleResetEmployeePassword} className="employee-action-form">
                                   <input type="hidden" name="employeeId" value={employee.id} />
                                   <label htmlFor={`newPassword-${employee.id}`}>Nova senha temporária</label>
                                   <PasswordInput
@@ -2584,6 +2615,7 @@ export default function DashboardPage() {
                                   type="button"
                                   className="btn secondary compact"
                                   onClick={() => {
+                                    setLinkingEmployeeId('');
                                     setResettingPasswordEmployeeId(employee.id);
                                     setErrorMessage('');
                                     setMessage('');
@@ -2594,7 +2626,7 @@ export default function DashboardPage() {
                               )
                             ) : (
                               linkingEmployeeId === employee.id ? (
-                                <form onSubmit={handleLinkEmployeeAccount} className="employee-action-form">
+                                <form ref={employeeActionFormRef} onSubmit={handleLinkEmployeeAccount} className="employee-action-form">
                                   <input type="hidden" name="employeeId" value={employee.id} />
                                   <label htmlFor={`accountEmail-${employee.id}`}>E-mail criado no Supabase Auth</label>
                                   <input
@@ -2621,6 +2653,7 @@ export default function DashboardPage() {
                                   type="button"
                                   className="btn secondary compact"
                                   onClick={() => {
+                                    setResettingPasswordEmployeeId('');
                                     setLinkingEmployeeId(employee.id);
                                     setErrorMessage('');
                                     setMessage('');
@@ -2690,16 +2723,32 @@ export default function DashboardPage() {
                       Fechar
                     </button>
                   </div>
-                  <p className="subtle">
-                    Faça o cadastro somente após obter o consentimento escrito do funcionário. A imagem é processada neste aparelho; somente o modelo facial criptografado é enviado e armazenado.
-                  </p>
-                  <FaceCamera
-                    buttonText={saving ? 'Salvando...' : 'Salvar cadastro facial'}
-                    disabled={saving}
-                    onCameraError={handleFaceEnrollmentCameraError}
-                    onCapture={handleFaceEnrollmentCapture}
-                    onCaptureError={handleFaceEnrollmentCaptureError}
-                  />
+                  {faceEnrollmentResult ? (
+                    <>
+                      <p role="status" style={{ color: '#147653' }}>{faceEnrollmentResult.message}</p>
+                      {faceEnrollmentResult.warning ? <p role="alert" style={{ color: '#a63232' }}>{faceEnrollmentResult.warning}</p> : null}
+                    </>
+                  ) : (
+                    <>
+                      <p className="subtle">
+                        Faça o cadastro somente após obter o consentimento escrito do funcionário. A imagem é processada neste aparelho; somente o modelo facial criptografado é enviado e armazenado.
+                      </p>
+                      {!faceCameraUnavailable ? (
+                        <FaceCamera
+                          buttonText={saving ? 'Salvando...' : 'Salvar cadastro facial'}
+                          disabled={saving}
+                          onCameraError={handleFaceEnrollmentCameraError}
+                          onCapture={handleFaceEnrollmentCapture}
+                          onCaptureError={handleFaceEnrollmentCaptureError}
+                        />
+                      ) : null}
+                      {faceEnrollmentError ? (
+                        <div ref={faceEnrollmentErrorRef} role="alert" style={{ marginTop: 14, color: '#a63232' }}>
+                          {faceEnrollmentError}
+                        </div>
+                      ) : null}
+                    </>
+                  )}
                 </div>
               </div>
             ) : null}
@@ -2877,7 +2926,7 @@ export default function DashboardPage() {
               </div>
               {administratorsLoading ? <p className="subtle">Carregando administradores...</p> : null}
               {administratorAction ? (
-                <form key={`${administratorAction.id}-${administratorAction.action}`} onSubmit={handleAdministratorChange} style={{ marginTop: 18 }}>
+                <form ref={administratorActionFormRef} key={`${administratorAction.id}-${administratorAction.action}`} onSubmit={handleAdministratorChange} style={{ marginTop: 18 }}>
                   <h4>{administratorAction.action === 'name' ? 'Editar nome' : 'Alterar senha'}: {administrators.find((item) => item.id === administratorAction.id)?.nome}</h4>
                   <div className="form-grid">
                     <div className="field">
