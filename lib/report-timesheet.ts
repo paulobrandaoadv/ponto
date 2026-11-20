@@ -1,5 +1,5 @@
 import { attendanceDate, attendanceTime } from './attendance-time';
-import { collectWorkShifts, type WorkSessionPunch } from './attendance-worked';
+import { collectWorkShifts, getWorkIntervals, splitWorkSessionByDay, type WorkSessionPunch } from './attendance-worked';
 
 type ReportPunch = WorkSessionPunch & { employeeId: string };
 type ReportEmployee = { id: string; name: string };
@@ -34,6 +34,9 @@ export function buildReportTimesheet(
     breakStarts: WorkSessionPunch[];
     breakEnds: WorkSessionPunch[];
     exit: WorkSessionPunch | undefined;
+    periods: Array<{ startAt: string; endAt: string }>;
+    workedMinutes: number | null;
+    pending: boolean;
   }> = [];
   const anomalies: Array<{ employee: ReportEmployee; punch: WorkSessionPunch }> = [];
   const inPeriod = (date: string) => date >= from && date <= to;
@@ -51,6 +54,14 @@ export function buildReportTimesheet(
         breakStarts: shift.filter((punch) => punch.type === 'saida_almoco'),
         breakEnds: shift.filter((punch) => punch.type === 'retorno_almoco'),
         exit: shift.find((punch) => punch.type === 'saida'),
+        periods: getWorkIntervals(shift).map(([start, end]) => ({
+          startAt: new Date(start).toISOString(),
+          endAt: new Date(end).toISOString(),
+        })),
+        workedMinutes: shift[shift.length - 1]?.type === 'saida'
+          ? splitWorkSessionByDay(shift).totalMinutes
+          : null,
+        pending: shift.some((punch) => punch.status === 'pending'),
       });
     }
     for (const punch of result.anomalies) {

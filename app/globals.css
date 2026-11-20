@@ -702,6 +702,96 @@ textarea:focus-visible {
   gap: 6px;
 }
 
+.employee-payment-section {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.employee-payment-controls {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.employee-payment-controls .field {
+  width: min(100%, 260px);
+}
+
+.employee-payment-print {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: #14213a;
+}
+
+.employee-payment-header {
+  padding-bottom: 14px;
+  border-bottom: 2px solid #14213a;
+}
+
+.employee-payment-header h2 {
+  margin: 6px 0 12px;
+  font-size: 1.25rem;
+}
+
+.employee-payment-identification {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 18px;
+}
+
+.employee-payment-print h3 {
+  margin: 18px 0 10px;
+  font-size: 1rem;
+}
+
+.employee-payment-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.employee-payment-table-wrap th,
+.employee-payment-table-wrap td {
+  padding: 8px;
+  white-space: normal;
+  vertical-align: top;
+}
+
+.employee-payment-summary {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1.4fr 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+}
+
+.employee-payment-note {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.employee-payment-declaration {
+  margin: 28px 0;
+}
+
+.employee-payment-signatures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 36px;
+  padding-top: 24px;
+  text-align: center;
+}
+
+.employee-payment-signatures span {
+  padding-top: 8px;
+  border-top: 1px solid var(--text);
+}
+
 .table-wrap {
   width: 100%;
   min-width: 0;
@@ -968,10 +1058,81 @@ th {
     min-width: 680px;
   }
 
+  .employee-payment-identification,
+  .employee-payment-signatures {
+    grid-template-columns: 1fr;
+  }
+
+  .employee-payment-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+
   th,
   td {
     padding: 10px 8px;
     font-size: 0.84rem;
+  }
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    background: #fff !important;
+  }
+
+  body:has(.employee-payment-print) .sidebar,
+  body:has(.employee-payment-print) .main-panel > :not(.panel:has(.employee-payment-print)),
+  body:has(.employee-payment-print) .main-panel > .panel:has(.employee-payment-print) > :not(.employee-payment-section),
+  body:has(.employee-payment-print) .employee-payment-section > :not(.employee-payment-print) {
+    display: none !important;
+  }
+
+  body:has(.employee-payment-print) .app-shell,
+  body:has(.employee-payment-print) .main-panel,
+  body:has(.employee-payment-print) .main-panel > .panel:has(.employee-payment-print) {
+    display: block;
+    width: auto;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+  }
+
+  body:has(.employee-payment-print) .employee-payment-section {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .employee-payment-print {
+    width: 100%;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    font-size: 9pt;
+  }
+
+  .employee-payment-print table {
+    min-width: 0 !important;
+    width: 100%;
+    font-size: 8pt;
+  }
+
+  .employee-payment-table-wrap {
+    overflow: visible;
+  }
+
+  .employee-payment-print tr {
+    break-inside: avoid;
   }
 }
 

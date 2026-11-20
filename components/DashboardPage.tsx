@@ -28,6 +28,7 @@ import { calculateWorkedHours, getEmployeePunchEvent, getWorkIntervals } from '@
 import { dashboardPeople } from '@/lib/dashboard-people';
 import { calculateReportOvertime } from '@/lib/report-overtime';
 import { buildReportTimesheet, buildTimesheetExportRows, formatReportTimesheetPunch } from '@/lib/report-timesheet';
+import { calculatePaymentCents, parseHourlyRateCents } from '@/lib/report-payment';
 
 type Employee = {
   id: string;
@@ -40,6 +41,7 @@ type Employee = {
   shift: string;
   saturdayUntilNoon: boolean;
   modalidade: 'mensalista' | 'diarista';
+  modalidadeCadastrada: boolean;
   status: string;
 };
 
@@ -216,6 +218,7 @@ export default function DashboardPage() {
   });
   const [reportTo, setReportTo] = useState(() => localDate(new Date()));
   const [reportEmployeeId, setReportEmployeeId] = useState('');
+  const [reportHourlyRate, setReportHourlyRate] = useState('');
   const [reportExportType, setReportExportType] = useState<'completa' | 'dia'>('completa');
   const [reportEntries, setReportEntries] = useState<AttendanceEntry[]>([]);
   const [reviewEmployeeId, setReviewEmployeeId] = useState('');
@@ -246,6 +249,22 @@ export default function DashboardPage() {
   const isManager = userRole === 'admin' || userRole === 'gestor';
   const isAdmin = userRole === 'admin';
   const isEmployee = userRole === 'funcionario';
+  const paymentReportEmployee = isAdmin && reportLoaded
+    ? employees.find((employee) => employee.id === reportEmployeeId) || null
+    : null;
+  const paymentReportTotals = paymentReportEmployee
+    ? reportOvertime.find((item) => item.employee.id === paymentReportEmployee.id) || null
+    : null;
+  const paymentReportRateCents = parseHourlyRateCents(reportHourlyRate);
+  const paymentReportAmountCents = paymentReportTotals && paymentReportRateCents !== null
+    ? calculatePaymentCents(paymentReportTotals.totalMinutes, paymentReportRateCents)
+    : null;
+  const paymentReportRows = paymentReportEmployee && reportTimesheet
+    ? reportTimesheet.rows.filter((row) => row.employee.id === paymentReportEmployee.id)
+    : [];
+  const paymentReportAnomalies = paymentReportEmployee && reportTimesheet
+    ? reportTimesheet.anomalies.filter((item) => item.employee.id === paymentReportEmployee.id)
+    : [];
 
   useEffect(() => {
     if (linkingEmployeeId || resettingPasswordEmployeeId) {
@@ -502,6 +521,7 @@ export default function DashboardPage() {
         shift: normalizeShift(employee.jornada),
         saturdayUntilNoon: Boolean(employee.sabado_ate_meio_dia),
         modalidade: employee.modalidade === 'diarista' ? 'diarista' as const : 'mensalista' as const,
+        modalidadeCadastrada: employee.modalidade === 'mensalista' || employee.modalidade === 'diarista',
         status: normalizeEmployeeStatus(employee.status),
       }));
       const employeeNames = new Map(loadedEmployees.map((employee) => [employee.id, employee.name]));
@@ -1040,6 +1060,7 @@ export default function DashboardPage() {
           shift,
           saturdayUntilNoon,
           modalidade,
+          modalidadeCadastrada: true,
           status,
         },
       ]);
@@ -1121,6 +1142,7 @@ export default function DashboardPage() {
       shift,
       saturdayUntilNoon,
       modalidade,
+      modalidadeCadastrada: true,
       status: normalizeEmployeeStatus(status),
     };
     setEmployees((current) =>
@@ -3117,6 +3139,7 @@ export default function DashboardPage() {
                     onChange={(event) => {
                       setReportFrom(event.target.value);
                       setReportLoaded(false);
+                      setReportHourlyRate('');
                     }}
                     required
                   />
@@ -3131,6 +3154,7 @@ export default function DashboardPage() {
                     onChange={(event) => {
                       setReportTo(event.target.value);
                       setReportLoaded(false);
+                      setReportHourlyRate('');
                     }}
                     required
                   />
@@ -3144,6 +3168,7 @@ export default function DashboardPage() {
                     onChange={(event) => {
                       setReportEmployeeId(event.target.value);
                       setReportLoaded(false);
+                      setReportHourlyRate('');
                     }}
                   >
                     <option value="">Todos os funcionários</option>
@@ -3183,6 +3208,142 @@ export default function DashboardPage() {
 
             {reportLoaded ? (
               <>
+              {isAdmin ? (
+                <section className="employee-payment-section">
+                  <h3>Relatório individual de horas e pagamento</h3>
+                  {!paymentReportEmployee ? (
+                    <p className="subtle">Selecione um funcionário e consulte o período para gerar o relatório individual.</p>
+                  ) : (
+                    <>
+                      {!paymentReportEmployee.modalidadeCadastrada ? (
+                        <p role="alert" className="employee-overtime-error">
+                          A modalidade não está definida no cadastro. O sistema está usando a regra de mensalista;
+                          confira a modalidade do funcionário antes de usar este demonstrativo.
+                        </p>
+                      ) : null}
+                      <div className="employee-payment-controls">
+                        <div className="field">
+                          <label htmlFor="reportHourlyRate">Valor da hora (R$)</label>
+                          <input
+                            id="reportHourlyRate"
+                            type="text"
+                            inputMode="decimal"
+                            autoComplete="off"
+                            placeholder="Ex.: 15,00"
+                            value={reportHourlyRate}
+                            onChange={(event) => setReportHourlyRate(event.target.value)}
+                          />
+                          <span className="subtle">Informado para este relatório; não será salvo no cadastro.</span>
+                        </div>
+                        <button type="button" className="btn primary"
+                          onClick={() => window.print()}
+                          disabled={paymentReportRateCents === null || paymentReportAmountCents === null}>
+                          Imprimir / salvar como PDF
+                        </button>
+                      </div>
+                      {reportHourlyRate && paymentReportRateCents === null ? (
+                        <p className="employee-overtime-error" role="alert">Informe um valor-hora válido e maior que zero, por exemplo 15,00.</p>
+                      ) : null}
+                      {paymentReportRateCents !== null && paymentReportAmountCents !== null && paymentReportTotals && paymentReportEmployee ? (
+                        <article className="employee-payment-print">
+                          <header className="employee-payment-header">
+                            <strong>CONTROLE DE FREQUÊNCIA E FECHAMENTO</strong>
+                            <h2>Relatório de Horas Trabalhadas e Demonstrativo de Pagamento</h2>
+                            <div className="employee-payment-identification">
+                              <span><strong>Funcionário:</strong> {paymentReportEmployee.name}</span>
+                              <span><strong>Código:</strong> {paymentReportEmployee.registrationCode || '—'}</span>
+                              <span><strong>Departamento:</strong> {paymentReportEmployee.department || '—'}</span>
+                              <span><strong>Período apurado:</strong> {reportFrom.split('-').reverse().join('/')} a {reportTo.split('-').reverse().join('/')}</span>
+                              <span><strong>Valor da hora:</strong> {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(paymentReportRateCents / 100)}</span>
+                              <span><strong>Emitido em:</strong> {localDate(new Date()).split('-').reverse().join('/')}</span>
+                            </div>
+                          </header>
+                          <h3>1. Detalhamento diário de registros</h3>
+                          <div className="employee-payment-table-wrap">
+                            <table>
+                              <thead>
+                                <tr><th>Data de entrada</th><th>Dia</th><th>Períodos trabalhados</th><th>Total da jornada</th><th>Situação</th></tr>
+                              </thead>
+                              <tbody>
+                                {paymentReportRows.map((row, index) => {
+                                  const date = new Date(`${row.date}T12:00:00Z`);
+                                  const weekday = new Intl.DateTimeFormat('pt-BR', {
+                                    weekday: 'long',
+                                    timeZone: ATTENDANCE_TIME_ZONE,
+                                  }).format(date);
+                                  return (
+                                    <tr key={`${row.employee.id}-${row.entry.id || index}`}>
+                                      <td>{row.date.split('-').reverse().join('/')}</td>
+                                      <td>{weekday}</td>
+                                      <td>{row.periods.length ? row.periods.map((period, periodIndex) => {
+                                        const startDate = localDate(new Date(period.startAt));
+                                        const endDate = localDate(new Date(period.endAt));
+                                        const start = `${localTime(new Date(period.startAt))}${startDate !== row.date ? ` (${startDate.split('-').reverse().join('/')})` : ''}`;
+                                        const end = `${localTime(new Date(period.endAt))}${endDate !== row.date ? ` (${endDate.split('-').reverse().join('/')})` : ''}`;
+                                        return <div key={periodIndex}>{start} – {end}{row.pending ? ' *' : ''}</div>;
+                                      }) : '—'}</td>
+                                      <td>{row.workedMinutes === null ? 'Não incluída' : formatOvertimeMinutes(row.workedMinutes)}</td>
+                                      <td>{row.workedMinutes === null ? 'Jornada incompleta' : row.pending ? 'Pendente' : 'Concluída'}</td>
+                                    </tr>
+                                  );
+                                })}
+                                {paymentReportRows.length === 0 ? (
+                                  <tr><td colSpan={5} className="empty">Nenhuma jornada encontrada no período.</td></tr>
+                                ) : null}
+                              </tbody>
+                            </table>
+                          </div>
+                          {paymentReportAnomalies.length ? (
+                            <div className="employee-payment-note">
+                              <p>Marcações inconsistentes que precisam de revisão:</p>
+                              <ul>
+                                {paymentReportAnomalies.map(({ punch }, index) => (
+                                  <li key={punch.id || index}>
+                                    {displayPunchType(punch.type)} em {localDate(new Date(punch.recordedAt)).split('-').reverse().join('/')} {localTime(new Date(punch.recordedAt))}
+                                    {' '}({punch.status === 'pending' ? 'pendente' : 'confirmada'})
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                          <p><strong>Total trabalhado em jornadas completas: </strong>
+                            {formatOvertimeMinutes(paymentReportRows.reduce((total, row) => total + (row.workedMinutes ?? 0), 0))}
+                          </p>
+                          <p className="employee-payment-note">
+                            Cada linha corresponde a uma jornada pela data da entrada. Horários de outros dias incluem a data.
+                            Jornadas que terminam após o período são incluídas integralmente.
+                          </p>
+                          <h3>2. Demonstrativo de cálculo e valor</h3>
+                          <div className="employee-payment-summary">
+                            <span>{paymentReportEmployee.modalidade === 'diarista' ? 'Horas trabalhadas' : 'Horas extras'}</span>
+                            <span>{formatOvertimeMinutes(paymentReportTotals.totalMinutes)}</span>
+                            <span>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(paymentReportRateCents / 100)} / hora</span>
+                            <strong>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(paymentReportAmountCents / 100)}</strong>
+                          </div>
+                          <p className="employee-payment-note">
+                            {!paymentReportEmployee.modalidadeCadastrada
+                              ? 'Modalidade não definida no cadastro: foi aplicada a regra de mensalista. Confira antes de usar este demonstrativo. '
+                              : ''}
+                            {paymentReportEmployee.modalidade === 'diarista'
+                              ? 'Para diarista, o valor é calculado sobre todas as horas trabalhadas em jornadas completas.'
+                              : 'Para mensalista, o valor é calculado somente sobre as horas extras apuradas no período.'}
+                            {' '}Marcações pendentes estão incluídas; rejeitadas e jornadas incompletas não entram no total.
+                            {' '}Horas dependentes de marcações pendentes: {formatOvertimeMinutes(paymentReportTotals.pendingMinutes)}.
+                            Este demonstrativo aplica apenas o valor-hora informado; não calcula adicionais, descontos, DSR ou encargos de folha.
+                          </p>
+                          <p className="employee-payment-declaration">
+                            Declaro que conferi os registros de horários discriminados neste demonstrativo.
+                          </p>
+                          <div className="employee-payment-signatures">
+                            <span>Assinatura do funcionário</span>
+                            <span>Responsável / empregador</span>
+                          </div>
+                        </article>
+                      ) : null}
+                    </>
+                  )}
+                </section>
+              ) : null}
               {isAdmin && reportTimesheet ? (
                 <div style={{ marginTop: 22 }}>
                   <h3>Quadro de marcações por jornada</h3>

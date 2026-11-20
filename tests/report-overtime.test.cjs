@@ -22,6 +22,7 @@ const overtime = load('attendance-overtime', { './attendance-time': time, './att
 const { calculateReportOvertime } = load('report-overtime', {
   './attendance-time': time, './attendance-worked': worked, './attendance-overtime': overtime,
 });
+const { calculatePaymentCents } = load('report-payment');
 const { buildReportTimesheet, buildTimesheetExportRows, formatReportTimesheetPunch } = load('report-timesheet', {
   './attendance-time': time, './attendance-worked': worked,
 });
@@ -33,6 +34,18 @@ const shift = (employeeId, timestamps, status = 'confirmed') =>
     employeeId, type, recordedAt: timestamps[i], status: i === 3 ? status : 'confirmed',
   }));
 const plain = (value) => JSON.parse(JSON.stringify(value));
+
+test('payment report uses worked hours for daily workers and overtime for monthly workers', () => {
+  const employees = [employee('daily', 'diarista'), employee('monthly', 'mensalista')];
+  const times = ['2026-11-10T11:00:00Z', '2026-11-10T15:00:00Z', '2026-11-10T16:00:00Z', '2026-11-10T22:00:00Z'];
+  const punches = [...shift('daily', times, 'pending'), ...shift('monthly', times)];
+  const totals = calculateReportOvertime(employees, punches, '2026-11-10', '2026-11-10');
+  assert.equal(totals[0].totalMinutes, 600);
+  assert.equal(totals[0].pendingMinutes, 600);
+  assert.equal(calculatePaymentCents(totals[0].totalMinutes, 1500), 15000);
+  assert.equal(totals[1].totalMinutes, 60);
+  assert.equal(calculatePaymentCents(totals[1].totalMinutes, 1500), 1500);
+});
 
 test('reports totals by employee and entry date, including shifts ending after the period', () => {
   const employees = [employee('mensalista', 'mensalista'), employee('diarista', 'diarista')];
@@ -84,6 +97,9 @@ test('timesheet places overnight exits on the entry date even beyond the report 
   const result = buildReportTimesheet(employees, punches, '2026-11-10', '2026-11-10');
   assert.equal(result.rows.length, 1);
   assert.equal(result.rows[0].date, '2026-11-10');
+  assert.equal(result.rows[0].workedMinutes, 450);
+  assert.equal(result.rows[0].periods.length, 2);
+  assert.equal(result.rows[0].pending, true);
   assert.equal(time.attendanceDate(new Date(result.rows[0].exit.recordedAt)), '2026-11-11');
   assert.equal(result.rows[0].exit.status, 'pending');
   assert.equal(formatReportTimesheetPunch(result.rows[0].entry, result.rows[0].date), '20:00');
@@ -112,6 +128,8 @@ test('timesheet preserves multiple breaks, open shifts and flags inconsistent pu
   assert.equal(result.rows[0].breakEnds.length, 2);
   assert.equal(result.rows[0].breakStarts[0].status, 'pending');
   assert.equal(result.rows[0].exit, undefined);
+  assert.equal(result.rows[0].workedMinutes, null);
+  assert.equal(result.rows[0].pending, true);
   assert.deepEqual(plain(result.anomalies.map(({ employee, punch }) => [employee.id, punch.type])), [
     ['a', 'entrada'], ['b', 'saida_almoco'],
   ]);
