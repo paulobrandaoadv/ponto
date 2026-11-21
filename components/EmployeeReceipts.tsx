@@ -18,7 +18,8 @@ export default function EmployeeReceipts({ companyId, employees }: Props) {
   const [type, setType] = useState<'advance' | 'payment'>('advance');
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState(() => attendanceDate(new Date()));
-  const [location, setLocation] = useState('');
+  const [location, setLocation] = useState('Mundo Novo/MS');
+  const [notes, setNotes] = useState('');
   const [filterEmployee, setFilterEmployee] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -74,14 +75,15 @@ export default function EmployeeReceipts({ companyId, employees }: Props) {
     setMessage('');
     requestId.current ||= crypto.randomUUID();
     try {
-      const { data, error: saveError } = await supabase.rpc('create_employee_receipt', {
+      const { data, error: saveError } = await supabase.rpc('create_employee_receipt_with_notes', {
         p_id: requestId.current, p_employee_id: employeeId, p_type: type,
-        p_amount_cents: cents, p_date: date, p_location: location,
+        p_amount_cents: cents, p_date: date, p_location: location, p_notes: notes,
       });
       if (saveError) throw new Error(saveError.message);
       setLocked(false);
       requestId.current = null;
       setAmount('');
+      setNotes('');
       setMessage('Recibo registrado.');
       try {
         await load();
@@ -177,6 +179,11 @@ export default function EmployeeReceipts({ companyId, employees }: Props) {
           <div className="field"><label htmlFor="receipt-location">Local</label>
             <input id="receipt-location" required maxLength={200} value={location} disabled={busy || locked} onChange={(e) => setLocation(e.target.value)} />
           </div>
+          <div className="field full"><label htmlFor="receipt-notes">Observação (opcional)</label>
+            <textarea id="receipt-notes" maxLength={1000} rows={3} value={notes} disabled={busy || locked}
+              placeholder="Ex.: pagamento referente a 30 horas entre 01 e 20 de novembro"
+              onChange={(e) => setNotes(e.target.value)} />
+          </div>
         </div>
         <button className="btn primary" disabled={busy} type="submit">{busy ? 'Aguarde...' : locked ? 'Tentar novamente' : 'Registrar recibo'}</button>
         {locked ? <button className="btn secondary" type="button" disabled={busy} onClick={() => {
@@ -229,11 +236,16 @@ export default function EmployeeReceipts({ companyId, employees }: Props) {
           <article className="receipt-print">
             <h2>{selected.receipt_type === 'advance' ? 'RECIBO DE ADIANTAMENTO (VALE)' : 'RECIBO DE PAGAMENTO'}</h2>
             <p><strong>Valor: {receiptMoney(selected.amount_cents)}</strong></p>
-            <p>Recebi de <strong>{selected.employer_name}</strong>{selected.employer_cnpj ? `, CNPJ ${selected.employer_cnpj},` : ','} a importância líquida de <strong>{receiptMoney(selected.amount_cents)} ({receiptMoneyWords(selected.amount_cents)})</strong>,
+            <p>Recebi de <strong>{selected.employer_name}</strong>{selected.employer_cnpj
+              ? selected.receipt_type === 'payment'
+                ? `, inscrita no CNPJ sob o nº ${selected.employer_cnpj},`
+                : `, CNPJ ${selected.employer_cnpj},`
+              : ','} a importância líquida de <strong>{receiptMoney(selected.amount_cents)} ({receiptMoneyWords(selected.amount_cents)})</strong>,
               {selected.receipt_type === 'advance'
                 ? ' referente a adiantamento salarial (vale), a ser descontado integralmente no próximo pagamento/fechamento.'
                 : ' referente a pagamento.'}</p>
             <p>Para maior clareza, assino o presente recibo dando quitação da quantia recebida.</p>
+            {selected.notes ? <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}><strong>Obs.:</strong> {selected.notes}</p> : null}
             <p><strong>Local e data:</strong> {selected.location}, {receiptDate(selected.receipt_date)}.</p>
             <p><strong>Nome completo do(a) funcionário(a):</strong> {selected.employee_name}</p>
             <p><strong>CPF:</strong> {displayCpf(selected.employee_cpf)}</p>

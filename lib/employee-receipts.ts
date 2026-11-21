@@ -12,6 +12,7 @@ export type EmployeeReceipt = {
   amount_cents: number;
   receipt_date: string;
   location: string;
+  notes: string | null;
   cancelled_at: string | null;
   cancellation_reason: string | null;
 };
