@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import FaceCamera from '@/components/FaceCamera';
 import PasswordInput from '@/components/PasswordInput';
+import EmployeeReceipts from '@/components/EmployeeReceipts';
 import {
   calculateMonthlyOvertime,
   DEFAULT_WORK_SCHEDULE,
@@ -28,7 +29,8 @@ import { calculateWorkedHours, getEmployeePunchEvent, getWorkIntervals } from '@
 import { dashboardPeople } from '@/lib/dashboard-people';
 import { calculateReportOvertime } from '@/lib/report-overtime';
 import { buildReportTimesheet, buildTimesheetExportRows, formatReportTimesheetPunch } from '@/lib/report-timesheet';
-import { calculatePaymentCents, parseHourlyRateCents } from '@/lib/report-payment';
+import { calculateAdvanceSimulation, calculatePaymentCents, parseHourlyRateCents } from '@/lib/report-payment';
+import { fetchEmployeeReceipts, receiptDate, receiptMoney, type EmployeeReceipt } from '@/lib/employee-receipts';
 
 type Employee = {
   id: string;
@@ -186,7 +188,7 @@ export default function DashboardPage() {
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [monthlyOvertimePunches, setMonthlyOvertimePunches] = useState<OvertimePunch[]>([]);
   const [overtimeLoadError, setOvertimeLoadError] = useState('');
-  const [activeView, setActiveView] = useState<'dashboard' | 'point' | 'employees' | 'administrators' | 'approvals' | 'reports' | 'alerts'>('dashboard');
+  const [activeView, setActiveView] = useState<'dashboard' | 'point' | 'employees' | 'administrators' | 'approvals' | 'reports' | 'alerts' | 'receipts'>('dashboard');
   const [userEmail, setUserEmail] = useState('');
   const [userRole, setUserRole] = useState('');
   const [companyId, setCompanyId] = useState('');
@@ -238,6 +240,7 @@ export default function DashboardPage() {
   const [reportTimesheet, setReportTimesheet] = useState<ReturnType<typeof buildReportTimesheet> | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportLoaded, setReportLoaded] = useState(false);
+  const [reportReceipts, setReportReceipts] = useState<EmployeeReceipt[]>([]);
   const pendingAttendance = useMemo(
     () => attendance.filter((entry) => entry.status === 'pending'),
     [attendance],
@@ -799,6 +802,7 @@ export default function DashboardPage() {
 
     setReportLoading(true);
     setReportLoaded(false);
+    setReportReceipts([]);
     const records: Array<{
       id: string;
       employee_id: string;
@@ -837,6 +841,18 @@ export default function DashboardPage() {
       records.push(...(data || []));
       if (!data || data.length < pageSize) break;
       offset += pageSize;
+    }
+
+    if (isAdmin && reportEmployeeId) {
+      try {
+        setReportReceipts(await fetchEmployeeReceipts(companyId, {
+          employeeId: reportEmployeeId, from: reportFrom, to: reportTo, activeOnly: true,
+        }));
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Não foi possível consultar os recibos.');
+        setReportLoading(false);
+        return;
+      }
     }
 
     const reportEmployees = reportEmployeeId
@@ -1805,7 +1821,7 @@ export default function DashboardPage() {
 
   const handleDeleteEmployee = async (employee: Employee) => {
     const confirmed = window.confirm(
-      `Excluir DEFINITIVAMENTE ${employee.name}? Todas as marcações e os dados vinculados serão apagados e não poderão ser recuperados.`,
+      `Excluir DEFINITIVAMENTE ${employee.name}? As marcações e a conta vinculada serão apagadas e não poderão ser recuperadas. Recibos e vales existentes permanecerão no histórico financeiro.`,
     );
     if (!confirmed) return;
     if (window.prompt(`Para confirmar, digite o nome do funcionário: ${employee.name}`) !== employee.name) {
@@ -1849,7 +1865,7 @@ export default function DashboardPage() {
         next.delete(employee.id);
         return next;
       });
-      setMessage(`${employee.name} e os dados vinculados foram excluídos definitivamente.`);
+      setMessage(`${employee.name}, suas marcações e conta vinculada foram excluídos. Recibos e vales existentes permanecem no histórico financeiro.`);
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -1951,6 +1967,12 @@ export default function DashboardPage() {
                   Administradores
                 </button>
               ) : null}
+              {isAdmin ? (
+                <button className={`nav-link ${activeView === 'receipts' ? 'active' : ''}`}
+                  onClick={() => { setReportLoaded(false); setActiveView('receipts'); }}>
+                  Recibos e vales
+                </button>
+              ) : null}
               <button
                 className={`nav-link ${activeView === 'reports' ? 'active' : ''}`}
                 onClick={() => setActiveView('reports')}
@@ -1977,7 +1999,7 @@ export default function DashboardPage() {
       <main className="main-panel">
         <header className="topbar">
           <div>
-            <h1>{activeView === 'dashboard' ? 'Dashboard' : activeView === 'point' ? isEmployee ? 'Meu ponto' : 'Registro de ponto' : activeView === 'employees' ? 'Funcionários' : activeView === 'administrators' ? 'Administradores' : activeView === 'approvals' ? 'Revisar marcações' : activeView === 'alerts' ? 'Jornadas com Alertas' : 'Relatórios'}</h1>
+            <h1>{activeView === 'dashboard' ? 'Dashboard' : activeView === 'point' ? isEmployee ? 'Meu ponto' : 'Registro de ponto' : activeView === 'employees' ? 'Funcionários' : activeView === 'administrators' ? 'Administradores' : activeView === 'approvals' ? 'Revisar marcações' : activeView === 'alerts' ? 'Jornadas com Alertas' : activeView === 'receipts' ? 'Recibos e vales' : 'Relatórios'}</h1>
             <div className="subtle">Sistema de controle de ponto</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -2002,6 +2024,10 @@ export default function DashboardPage() {
           </div>
         ) : null}
         {loading ? <div className="panel" role="status">Carregando dados do Supabase...</div> : null}
+
+        {isAdmin && activeView === 'receipts' && !loading ? (
+          <EmployeeReceipts companyId={companyId} employees={employees} />
+        ) : null}
 
         {isEmployee ? (
           <div className="panel employee-overtime-panel">
@@ -3329,7 +3355,31 @@ export default function DashboardPage() {
                               : 'Para mensalista, o valor é calculado somente sobre as horas extras apuradas no período.'}
                             {' '}Marcações pendentes estão incluídas; rejeitadas e jornadas incompletas não entram no total.
                             {' '}Horas dependentes de marcações pendentes: {formatOvertimeMinutes(paymentReportTotals.pendingMinutes)}.
-                            Este demonstrativo aplica apenas o valor-hora informado; não calcula adicionais, descontos, DSR ou encargos de folha.
+                            Este demonstrativo aplica apenas o valor-hora informado; não calcula adicionais, DSR ou encargos de folha.
+                          </p>
+                          <h3>3. Vales e pagamentos registrados no período</h3>
+                          {reportReceipts.length ? (
+                            <ul>{reportReceipts.map((receipt) => (
+                              <li key={receipt.id}>{receiptDate(receipt.receipt_date)} — {receipt.receipt_type === 'advance' ? 'Vale' : 'Pagamento'}: {receiptMoney(receipt.amount_cents)}</li>
+                            ))}</ul>
+                          ) : <p>Nenhum vale ou pagamento ativo no período.</p>}
+                          {(() => {
+                            const simulation = calculateAdvanceSimulation(paymentReportAmountCents,
+                              reportReceipts.filter((receipt) => receipt.receipt_type === 'advance')
+                                .map((receipt) => receipt.amount_cents));
+                            return <>
+                              <p><strong>Total de vales: {receiptMoney(simulation.total)}</strong></p>
+                              {simulation.remaining !== null ? (
+                                <p><strong>Simulação após abatimento dos vales: {receiptMoney(simulation.remaining)}</strong></p>
+                              ) : (
+                                <p>Os vales superam o valor calculado; são apresentados separadamente, sem saldo.</p>
+                              )}
+                            </>;
+                          })()}
+                          <p className="employee-payment-note">
+                            Simulação apenas sobre o valor de horas acima, não sobre o salário ou a folha completa.
+                            Os pagamentos são informativos e não são abatidos. Este relatório não registra fechamento
+                            nem marca vales como descontados. Consulte novamente para atualizar os recibos.
                           </p>
                           <p className="employee-payment-declaration">
                             Declaro que conferi os registros de horários discriminados neste demonstrativo.

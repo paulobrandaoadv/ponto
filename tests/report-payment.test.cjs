@@ -30,3 +30,17 @@ test('calculates report payment from exact minutes and hourly cents', () => {
   assert.throws(() => calculatePaymentCents(-1, 1500), /horas e valor-hora válidos/);
   assert.throws(() => calculatePaymentCents(Number.MAX_SAFE_INTEGER, 1500), /limite permitido/);
 });
+
+test('simulates advances without producing a negative balance', () => {
+  const { calculateAdvanceSimulation } = context.exports;
+  let result = calculateAdvanceSimulation(10000, [2500, 1000]);
+  assert.equal(result.total, 3500);
+  assert.equal(result.remaining, 6500);
+  result = calculateAdvanceSimulation(10000, [10000]);
+  assert.equal(result.remaining, 0);
+  result = calculateAdvanceSimulation(10000, [10001]);
+  assert.equal(result.total, 10001);
+  assert.equal(result.remaining, null);
+  assert.throws(() => calculateAdvanceSimulation(100, [-1]), /inválidos/);
+  assert.throws(() => calculateAdvanceSimulation(100, [Number.MAX_SAFE_INTEGER, 1]), /limite/);
+});

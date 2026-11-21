@@ -22,3 +22,13 @@ export function calculatePaymentCents(minutes: number, hourlyRateCents: number) 
   }
   return Math.round(product / 60);
 }
+
+export function calculateAdvanceSimulation(paymentCents: number, advanceCents: number[]) {
+  if (!Number.isSafeInteger(paymentCents) || paymentCents < 0 ||
+      advanceCents.some((amount) => !Number.isSafeInteger(amount) || amount <= 0)) {
+    throw new Error('Valores inválidos para simular os vales.');
+  }
+  const total = advanceCents.reduce((sum, amount) => sum + amount, 0);
+  if (!Number.isSafeInteger(total)) throw new Error('O total dos vales excede o limite permitido.');
+  return { total, remaining: total <= paymentCents ? paymentCents - total : null };
+}
