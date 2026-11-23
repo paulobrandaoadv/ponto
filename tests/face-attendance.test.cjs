@@ -9,7 +9,14 @@ const source = fs.readFileSync(path.join(__dirname, '..', 'lib', 'face-attendanc
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
 const context = { exports: {} };
 vm.runInNewContext(compiled, context);
-const { facePunchOptions, isRetryableFaceAttendanceError } = context.exports;
+const { facePunchOptions, hasOpenSessionAfterExit, isRetryableFaceAttendanceError } = context.exports;
+
+test('detects an open database session after the latest exit', () => {
+  assert.equal(hasOpenSessionAfterExit('saida', true), true);
+  assert.equal(hasOpenSessionAfterExit('saida', false), false);
+  assert.equal(hasOpenSessionAfterExit('entrada', true), false);
+  assert.equal(hasOpenSessionAfterExit(null, true), false);
+});
 
 test('only entry is offered after a completed shift, not when a shift crosses midnight', () => {
   assert.deepEqual(Array.from(facePunchOptions('saida')), ['entrada']);

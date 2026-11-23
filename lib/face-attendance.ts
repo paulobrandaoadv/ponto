@@ -1,5 +1,9 @@
 export type FacePunchType = 'entrada' | 'saida_almoco' | 'retorno_almoco' | 'saida';
 
+export function hasOpenSessionAfterExit(lastEvent: string | null, hasOpenSession: boolean): boolean {
+  return lastEvent === 'saida' && hasOpenSession;
+}
+
 export function facePunchOptions(lastEvent: string | null): FacePunchType[] {
   if (lastEvent === 'saida') return ['entrada'];
   return ['entrada', 'saida_almoco', 'retorno_almoco', 'saida'];

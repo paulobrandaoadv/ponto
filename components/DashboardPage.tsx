@@ -31,6 +31,7 @@ import { calculateReportOvertime } from '@/lib/report-overtime';
 import { buildReportTimesheet, buildTimesheetExportRows, formatReportTimesheetPunch } from '@/lib/report-timesheet';
 import { calculateAdvanceSimulation, calculatePaymentCents, parseHourlyRateCents } from '@/lib/report-payment';
 import { fetchEmployeeReceipts, receiptDate, receiptMoney, type EmployeeReceipt } from '@/lib/employee-receipts';
+import { hasOpenSessionAfterExit } from '@/lib/face-attendance';
 
 type Employee = {
   id: string;
@@ -188,6 +189,7 @@ export default function DashboardPage() {
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [monthlyOvertimePunches, setMonthlyOvertimePunches] = useState<OvertimePunch[]>([]);
   const [overtimeLoadError, setOvertimeLoadError] = useState('');
+  const [employeeSessionConflict, setEmployeeSessionConflict] = useState(false);
   const [activeView, setActiveView] = useState<'dashboard' | 'point' | 'employees' | 'administrators' | 'approvals' | 'reports' | 'alerts' | 'receipts'>('dashboard');
   const [userEmail, setUserEmail] = useState('');
   const [userRole, setUserRole] = useState('');
@@ -559,6 +561,16 @@ export default function DashboardPage() {
             break;
           }
           offset += pageSize;
+        }
+        const { data: openSession, error: sessionReadError } = await supabase
+          .from('work_sessions').select('id').eq('employee_id', loadedEmployees[0].id)
+          .eq('status', 'open').limit(1).maybeSingle();
+        if (sessionReadError) {
+          setOvertimeLoadError(`Não foi possível verificar a jornada aberta: ${sessionReadError.message}`);
+        } else {
+          const validRecords = allRecords.filter((record) => record.status !== 'rejected');
+          const lastValid = validRecords[validRecords.length - 1];
+          setEmployeeSessionConflict(hasOpenSessionAfterExit(lastValid?.type || null, Boolean(openSession)));
         }
       }
 
@@ -1393,7 +1405,7 @@ export default function DashboardPage() {
     const notes = String(formData.get('notes') || '').trim();
 
     if (isEmployee) {
-      if (!employeePunchEvent || overtimeLoadError) {
+      if (!employeePunchEvent || overtimeLoadError || employeeSessionConflict) {
         setErrorMessage('Não foi possível continuar a jornada. Solicite a revisão das marcações ao administrador.');
         return;
       }
@@ -1557,7 +1569,18 @@ export default function DashboardPage() {
       },
       ...current,
     ]);
-    setMessage('Marcação salva no Supabase como pendente de confirmação.');
+    const [savedResult, alertsResult] = await Promise.all([
+      supabase.from('attendance_records').select('work_session_id, work_session_error').eq('id', record.id).single(),
+      supabase.from('attendance_alerts').select('id').eq('attendance_record_id', record.id)
+        .eq('alert_type', 'inconsistent_sequence').limit(1),
+    ]);
+    if (savedResult.error || alertsResult.error || !savedResult.data) {
+      setErrorMessage('A marcação foi salva, mas não foi possível verificar a jornada. Consulte Jornadas com Alertas antes de continuar.');
+    } else if (savedResult.data.work_session_error || !savedResult.data.work_session_id || alertsResult.data.length) {
+      setErrorMessage('A marcação foi salva, mas a jornada precisa de revisão. Confira Jornadas com Alertas; não registre a mesma marcação novamente.');
+    } else {
+      setMessage('Marcação salva no Supabase como pendente de confirmação.');
+    }
     setSaving(false);
     form.reset();
   };
@@ -2018,6 +2041,11 @@ export default function DashboardPage() {
             {todayLoadError} Atualize a página para tentar novamente.
           </div>
         ) : null}
+        {employeeSessionConflict && isEmployee ? (
+          <div className="panel" role="alert" style={{ marginBottom: 18, borderColor: '#d95a5a', color: '#a63232' }}>
+            Há uma saída registrada, mas a jornada ainda está aberta. Peça ao administrador para revisar as marcações.
+          </div>
+        ) : null}
         {message ? (
           <div className="panel" role="status" style={{ marginBottom: 18, borderColor: '#1ea67a', color: '#147653' }}>
             {message}
@@ -2286,7 +2314,7 @@ export default function DashboardPage() {
                     <button
                       type="submit"
                       className="btn primary"
-                      disabled={saving || loading || employees.length === 0 || !nextEmployeeEvent || Boolean(overtimeLoadError)}
+                      disabled={saving || loading || employees.length === 0 || !nextEmployeeEvent || Boolean(overtimeLoadError) || employeeSessionConflict}
                     >
                       {saving
                         ? 'Registrando...'

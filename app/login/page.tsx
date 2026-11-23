@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import FaceCamera from '@/components/FaceCamera';
 import PasswordInput from '@/components/PasswordInput';
-import { facePunchOptions, isRetryableFaceAttendanceError, type FacePunchType } from '@/lib/face-attendance';
+import { facePunchOptions, hasOpenSessionAfterExit, isRetryableFaceAttendanceError, type FacePunchType } from '@/lib/face-attendance';
 import { FaceRecognitionError } from '@/lib/face-recognition';
 import { supabase } from '@/lib/supabase';
 
@@ -163,6 +163,21 @@ export default function LoginPage() {
         setMode('punch-error');
         setError(`Não foi possível consultar a última marcação: ${lastPunchError.message}. Abra Meu ponto para continuar.`);
         return;
+      }
+      if (lastPunch?.event_type === 'saida') {
+        const { data: openSession, error: sessionReadError } = await supabase
+          .from('work_sessions')
+          .select('id')
+          .eq('employee_id', result.employeeId)
+          .eq('status', 'open')
+          .limit(1)
+          .maybeSingle();
+        if (sessionReadError) throw new Error(sessionReadError.message);
+        if (hasOpenSessionAfterExit(lastPunch.event_type, Boolean(openSession))) {
+          setMode('punch-error');
+          setError('Há uma divergência na jornada: existe uma saída registrada, mas a jornada ainda está aberta. Peça ao administrador para revisar as marcações.');
+          return;
+        }
       }
       setLastFacePunchType(lastPunch?.event_type ?? null);
     } catch (error) {
