@@ -622,6 +622,29 @@ textarea:focus-visible {
   pointer-events: none;
 }
 
+.face-camera-oval-searching {
+  border: 4px solid #ff5353;
+  box-shadow: 0 0 0 999px rgba(0,0,0,0.38), 0 0 18px rgba(255,83,83,0.65);
+}
+
+.face-camera-oval-verifying {
+  border: 4px solid #2ee88d;
+  box-shadow: 0 0 0 999px rgba(0,0,0,0.38), 0 0 18px rgba(46,232,141,0.65);
+}
+
+.face-camera-oval-scanning {
+  animation: face-camera-pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes face-camera-pulse {
+  from { opacity: 0.65; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .face-camera-oval-scanning { animation: none; }
+}
+
 .login-panel [role="alert"] {
   margin-top: 14px;
   padding: 0.75rem 0.9rem;

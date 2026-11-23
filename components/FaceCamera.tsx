@@ -27,6 +27,7 @@ export default function FaceCamera({
   const [cameraReady, setCameraReady] = useState(false);
   const [modelsReady, setModelsReady] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [guidance, setGuidance] = useState('');
   onCaptureErrorRef.current = onCaptureError;
   onCaptureRef.current = onCapture;
@@ -82,7 +83,12 @@ export default function FaceCamera({
     return startAutomaticFaceCapture(
       async () => {
         if (!videoRef.current) throw new Error('A câmera não está disponível.');
-        return extractFaceDescriptor(videoRef.current);
+        setScanning(true);
+        try {
+          return await extractFaceDescriptor(videoRef.current);
+        } finally {
+          setScanning(false);
+        }
       },
       async (descriptor) => {
         setGuidance('');
@@ -127,16 +133,20 @@ export default function FaceCamera({
         />
         <div
           aria-hidden="true"
-          className="face-camera-oval"
+          className={`face-camera-oval${automatic && cameraReady && modelsReady
+            ? capturing ? ' face-camera-oval-verifying' : ' face-camera-oval-searching'
+            : ''}${automatic && scanning ? ' face-camera-oval-scanning' : ''}`}
         />
       </div>
-      <p className="subtle" style={{ margin: 0 }}>
+      <p className="subtle" style={{ margin: 0 }} role={automatic ? 'status' : undefined}>
         {!cameraReady
           ? 'Iniciando a câmera...'
           : !modelsReady
             ? 'Preparando o leitor facial...'
-            : capturing ? 'Validando identidade...'
-              : guidance || 'Posicione o rosto dentro do oval e mantenha boa iluminação.'}
+            : capturing ? automatic ? 'Rosto detectado. Verificando identidade...' : 'Validando identidade...'
+              : guidance || (automatic
+                ? 'Buscando rosto automaticamente. Posicione-se diante da câmera com boa iluminação.'
+                : 'Posicione o rosto dentro do oval e mantenha boa iluminação.')}
       </p>
       {!automatic ? <button
         type="button"
