@@ -58,6 +58,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [faceVerifying, setFaceVerifying] = useState(false);
   const [pendingFacePunch, setPendingFacePunch] = useState<{ employeeName: string; challengeId: string } | null>(null);
   const [lastFacePunchType, setLastFacePunchType] = useState<string | null>(null);
   const facePunchInFlight = useRef(false);
@@ -84,12 +85,9 @@ export default function LoginPage() {
       setError('O reconhecimento facial está indisponível neste navegador. Entre com seu nome ou matrícula e senha.');
       return;
     }
-    handleFaceFailure(
-      captureError instanceof Error
-        ? captureError.message
-        : 'Não foi possível validar o rosto. Tente novamente.',
-    );
-  }, [handleFaceFailure]);
+    setMode('manual');
+    setError(`${captureError instanceof Error ? captureError.message : 'Não foi possível processar a imagem facial.'} Use o login manual.`);
+  }, []);
 
   const handleFaceCapture = async (descriptor: number[]) => {
     if (!supabase) {
@@ -110,12 +108,13 @@ export default function LoginPage() {
       });
       result = await response.json() as FaceAuthResult;
     } catch {
-      setError('Não foi possível conectar ao reconhecimento facial. Tente novamente ou use o login manual.');
+      setMode('manual');
+      setError('Não foi possível conectar ao reconhecimento facial. Use o login manual ou tente novamente mais tarde.');
       return;
     }
 
     if (!response.ok) {
-      if (response.status === 429) setMode('manual');
+      setMode('manual');
       setError(result.error || 'Não foi possível verificar o rosto. Use o login manual.');
       return;
     }
@@ -341,7 +340,7 @@ export default function LoginPage() {
           </h1>
           <p className="login-description">
             {mode === 'face'
-              ? 'Centralize seu rosto para validar sua identidade. Você terá até três tentativas.'
+              ? 'Centralize seu rosto: a identificação será feita automaticamente. Você terá até três tentativas de reconhecimento.'
               : mode === 'face-action'
                 ? `Identidade validada para ${pendingFacePunch?.employeeName || 'funcionário'}. Escolha exatamente o que deseja registrar.`
               : mode === 'processing'
@@ -365,16 +364,30 @@ export default function LoginPage() {
                 {successMessage}
               </p>
             ) : null}
-            <FaceCamera
-              buttonText="Validar identidade"
-              onCameraError={handleCameraError}
-              onCapture={handleFaceCapture}
-              onCaptureError={handleCaptureError}
-            />
-            <p className="subtle" style={{ marginTop: 12, textAlign: 'center' }}>
-              Tentativas: {attempts} de 3
-            </p>
-            <button type="button" className="btn secondary" onClick={openManualLogin} style={{ width: '100%', marginTop: 4 }}>
+            {!successMessage ? <>
+              <FaceCamera
+                buttonText="Validar identidade"
+                automatic
+                onCameraError={handleCameraError}
+                onCapture={async (descriptor) => {
+                  setFaceVerifying(true);
+                  try {
+                    await handleFaceCapture(descriptor);
+                  } finally {
+                    setFaceVerifying(false);
+                  }
+                }}
+                onCaptureError={handleCaptureError}
+              />
+              <p className="subtle" style={{ marginTop: 12, textAlign: 'center' }}>
+                Tentativas: {attempts} de 3
+              </p>
+            </> : (
+              <button type="button" className="btn primary" onClick={() => setSuccessMessage('')} style={{ width: '100%' }}>
+                Iniciar próxima leitura
+              </button>
+            )}
+            <button type="button" className="btn secondary" disabled={faceVerifying} onClick={openManualLogin} style={{ width: '100%', marginTop: 4 }}>
               Entrar com nome ou matrícula e senha
             </button>
           </div>

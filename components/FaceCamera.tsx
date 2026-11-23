@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { extractFaceDescriptor, preloadFaceModels } from '@/lib/face-recognition';
+import { startAutomaticFaceCapture } from '@/lib/automatic-face-capture';
 
 type FaceCameraProps = {
   buttonText: string;
   disabled?: boolean;
+  automatic?: boolean;
   onCameraError: (error: Error) => void;
   onCapture: (descriptor: number[]) => Promise<void>;
   onCaptureError: (error: unknown) => void;
@@ -14,16 +16,20 @@ type FaceCameraProps = {
 export default function FaceCamera({
   buttonText,
   disabled = false,
+  automatic = false,
   onCameraError,
   onCapture,
   onCaptureError,
 }: FaceCameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const onCaptureErrorRef = useRef(onCaptureError);
+  const onCaptureRef = useRef(onCapture);
   const [cameraReady, setCameraReady] = useState(false);
   const [modelsReady, setModelsReady] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [guidance, setGuidance] = useState('');
   onCaptureErrorRef.current = onCaptureError;
+  onCaptureRef.current = onCapture;
 
   useEffect(() => {
     let active = true;
@@ -71,6 +77,27 @@ export default function FaceCamera({
     };
   }, [onCameraError]);
 
+  useEffect(() => {
+    if (!automatic || !cameraReady || !modelsReady || disabled) return;
+    return startAutomaticFaceCapture(
+      async () => {
+        if (!videoRef.current) throw new Error('A câmera não está disponível.');
+        return extractFaceDescriptor(videoRef.current);
+      },
+      async (descriptor) => {
+        setGuidance('');
+        setCapturing(true);
+        try {
+          await onCaptureRef.current(descriptor);
+        } finally {
+          setCapturing(false);
+        }
+      },
+      setGuidance,
+      (error) => onCaptureErrorRef.current(error),
+    );
+  }, [automatic, cameraReady, modelsReady, disabled]);
+
   const handleCapture = async () => {
     const video = videoRef.current;
     if (!video || !cameraReady || !modelsReady || capturing || disabled) return;
@@ -108,16 +135,17 @@ export default function FaceCamera({
           ? 'Iniciando a câmera...'
           : !modelsReady
             ? 'Preparando o leitor facial...'
-            : 'Posicione o rosto dentro do oval e mantenha boa iluminação.'}
+            : capturing ? 'Validando identidade...'
+              : guidance || 'Posicione o rosto dentro do oval e mantenha boa iluminação.'}
       </p>
-      <button
+      {!automatic ? <button
         type="button"
         className="btn primary"
         onClick={() => void handleCapture()}
         disabled={!cameraReady || !modelsReady || capturing || disabled}
       >
         {capturing ? 'Lendo rosto...' : buttonText}
-      </button>
+      </button> : null}
     </div>
   );
 }
