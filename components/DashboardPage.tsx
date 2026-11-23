@@ -25,7 +25,7 @@ import {
 } from '@/lib/attendance-time';
 import { supabase } from '@/lib/supabase';
 import { cpfDigits, cpfSearchPattern, displayCpf, formatCpfInput, sameCpf } from '@/lib/cpf';
-import { calculateWorkedHours, getEmployeePunchEvent, getWorkIntervals } from '@/lib/attendance-worked';
+import { calculateWorkedHours, filterWorkedDays, getEmployeePunchEvent, getWorkIntervals } from '@/lib/attendance-worked';
 import { dashboardPeople } from '@/lib/dashboard-people';
 import { calculateReportOvertime } from '@/lib/report-overtime';
 import { buildReportTimesheet, buildTimesheetExportRows, formatReportTimesheetPunch } from '@/lib/report-timesheet';
@@ -190,6 +190,10 @@ export default function DashboardPage() {
   const [monthlyOvertimePunches, setMonthlyOvertimePunches] = useState<OvertimePunch[]>([]);
   const [overtimeLoadError, setOvertimeLoadError] = useState('');
   const [employeeSessionConflict, setEmployeeSessionConflict] = useState(false);
+  const [workedFrom, setWorkedFrom] = useState('');
+  const [workedTo, setWorkedTo] = useState('');
+  const [workedPeriod, setWorkedPeriod] = useState<{ from: string; to: string } | null>(null);
+  const [workedPeriodError, setWorkedPeriodError] = useState('');
   const [activeView, setActiveView] = useState<'dashboard' | 'point' | 'employees' | 'administrators' | 'approvals' | 'reports' | 'alerts' | 'receipts'>('dashboard');
   const [userEmail, setUserEmail] = useState('');
   const [userRole, setUserRole] = useState('');
@@ -335,6 +339,9 @@ export default function DashboardPage() {
     monthlyOvertime ? monthlyOvertime.confirmedMinutes + monthlyOvertime.pendingMinutes : 0;
   const isDailyWorker = employees[0]?.modalidade === 'diarista';
   const workedHours = useMemo(() => calculateWorkedHours(monthlyOvertimePunches), [monthlyOvertimePunches]);
+  const displayedWorkedHours = useMemo(() => workedPeriod
+    ? filterWorkedDays(workedHours.days, workedPeriod.from, workedPeriod.to)
+    : workedHours, [workedHours, workedPeriod]);
   const scheduleDefaults = parseWorkSchedule(editingEmployee?.shift) || DEFAULT_WORK_SCHEDULE;
   const nextEmployeeEvent = workedHours.nextEvent;
   const employeeWorkState = workedHours.state;
@@ -2060,9 +2067,11 @@ export default function DashboardPage() {
         {isEmployee ? (
           <div className="panel employee-overtime-panel">
             <div className="employee-overtime-heading">
-              <h3>Total de horas extras</h3>
+              <h3>{isDailyWorker ? 'Total de horas trabalhadas' : 'Total de horas extras'}</h3>
               <span>
-                {isDailyWorker ? 'Todo o histórico' : new Date().toLocaleDateString('pt-BR', {
+                {isDailyWorker ? workedPeriod
+                  ? `${workedPeriod.from.split('-').reverse().join('/')} a ${workedPeriod.to.split('-').reverse().join('/')}`
+                  : 'Todo o histórico' : new Date().toLocaleDateString('pt-BR', {
                   month: 'long',
                   year: 'numeric',
                   timeZone: ATTENDANCE_TIME_ZONE,
@@ -2074,13 +2083,49 @@ export default function DashboardPage() {
             ) : (
               <>
                 <strong className="employee-overtime-total">
-                  {loading ? 'Carregando...' : formatOvertimeMinutes(isDailyWorker ? workedHours.totalMinutes : totalMonthlyOvertimeMinutes)}
+                  {loading ? 'Carregando...' : formatOvertimeMinutes(isDailyWorker ? displayedWorkedHours.totalMinutes : totalMonthlyOvertimeMinutes)}
                 </strong>
-                {!loading && (isDailyWorker ? workedHours.days : monthlyOvertime?.days || []).length > 0 ? (
+                {isDailyWorker ? (
+                  <form className="employee-hours-filter" onSubmit={(event) => {
+                    event.preventDefault();
+                    try {
+                      filterWorkedDays(workedHours.days, workedFrom, workedTo);
+                      setWorkedPeriod({ from: workedFrom, to: workedTo });
+                      setWorkedPeriodError('');
+                    } catch (error) {
+                      setWorkedPeriodError(error instanceof Error ? error.message : 'Informe um período válido.');
+                    }
+                  }}>
+                    <div className="form-grid">
+                      <div className="field">
+                        <label htmlFor="worked-from">Data inicial</label>
+                        <input id="worked-from" type="date" required value={workedFrom}
+                          onChange={(event) => setWorkedFrom(event.target.value)} />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="worked-to">Data final</label>
+                        <input id="worked-to" type="date" required value={workedTo}
+                          onChange={(event) => setWorkedTo(event.target.value)} />
+                      </div>
+                    </div>
+                    {workedPeriodError ? <p className="employee-overtime-error" role="alert">{workedPeriodError}</p> : null}
+                    <div className="employee-hours-filter-actions">
+                      <button type="submit" className="btn primary" disabled={loading}>Consultar período</button>
+                      <button type="button" className="btn secondary" onClick={() => {
+                        setWorkedFrom('');
+                        setWorkedTo('');
+                        setWorkedPeriod(null);
+                        setWorkedPeriodError('');
+                      }}>Mostrar todo o histórico</button>
+                    </div>
+                    <p className="subtle">A consulta não apaga horas nem registra pagamento ou fechamento.</p>
+                  </form>
+                ) : null}
+                {!loading && (isDailyWorker ? displayedWorkedHours.days : monthlyOvertime?.days || []).length > 0 ? (
                   <div className="employee-overtime-days">
-                    <h4>Horas extras por data trabalhada</h4>
+                    <h4>{isDailyWorker ? 'Horas por data trabalhada' : 'Horas extras por data trabalhada'}</h4>
                     <ul>
-                      {(isDailyWorker ? workedHours.days : monthlyOvertime?.days || []).map((day) => (
+                      {(isDailyWorker ? displayedWorkedHours.days : monthlyOvertime?.days || []).map((day) => (
                         <li key={day.date}>
                           <time dateTime={day.date}>{day.date.split('-').reverse().join('/')}</time>
                           <strong>{formatOvertimeMinutes(day.minutes)}</strong>
@@ -2090,7 +2135,10 @@ export default function DashboardPage() {
                     <p>O total inclui marcações pendentes de revisão.</p>
                     {isDailyWorker ? <p>Para diaristas, são somadas todas as horas trabalhadas, descontando o intervalo.</p> : null}
                   </div>
-                ) : null}
+                ) : !loading && isDailyWorker && workedPeriod ? <p className="subtle">Nenhuma hora trabalhada em jornadas completas no período.</p> : null}
+                {isDailyWorker ? <p className="subtle employee-hours-note">
+                  As horas são distribuídas pelas datas em que foram trabalhadas, inclusive em jornadas que passam da meia-noite. Marcações pendentes são incluídas; rejeitadas não.
+                </p> : null}
                 {!loading && workedHours.incomplete > 0 ? (
                   <p className="employee-overtime-error">Há marcações incompletas ou inconsistentes que não foram somadas. Solicite a revisão ao administrador.</p>
                 ) : null}

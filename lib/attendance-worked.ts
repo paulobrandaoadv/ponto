@@ -186,3 +186,11 @@ export function calculateWorkedHours(punches: WorkSessionPunch[], now = new Date
     anomalies: result.anomalies,
   };
 }
+
+export function filterWorkedDays(days: Array<{ date: string; minutes: number }>, from: string, to: string) {
+  nextAttendanceDate(from);
+  nextAttendanceDate(to);
+  if (from > to) throw new Error('A data inicial deve ser anterior ou igual à data final.');
+  const filtered = days.filter((day) => day.date >= from && day.date <= to);
+  return { days: filtered, totalMinutes: filtered.reduce((total, day) => total + day.minutes, 0) };
+}

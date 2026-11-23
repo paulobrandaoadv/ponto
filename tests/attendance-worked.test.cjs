@@ -17,7 +17,7 @@ function load(name, dependencies = {}) {
 }
 
 const time = load('attendance-time');
-const { calculateWorkedHours, collectWorkShifts, getEmployeePunchEvent } = load('attendance-worked', { './attendance-time': time });
+const { calculateWorkedHours, collectWorkShifts, filterWorkedDays, getEmployeePunchEvent } = load('attendance-worked', { './attendance-time': time });
 const punch = (type, recordedAt, status = 'confirmed') => ({ type, recordedAt, status });
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
@@ -156,4 +156,28 @@ test('a long completed shift is retained and split by its real work intervals', 
     { date: '2026-11-11', minutes: 1440 },
     { date: '2026-11-10', minutes: 1045 },
   ]);
+});
+
+test('filters inclusive worked dates across midnight and keeps pending completed shifts', () => {
+  const result = calculateWorkedHours([
+    punch('entrada', '2026-11-15T23:00:00Z'),
+    punch('saida_almoco', '2026-11-16T01:00:00Z'),
+    punch('retorno_almoco', '2026-11-16T02:00:00Z'),
+    punch('saida', '2026-11-16T06:00:00Z', 'pending'),
+    punch('entrada', '2026-11-16T13:00:00Z'),
+  ]);
+  const first = filterWorkedDays(result.days, '2026-11-15', '2026-11-15');
+  const second = filterWorkedDays(result.days, '2026-11-16', '2026-11-30');
+  assert.equal(first.totalMinutes, 240);
+  assert.equal(second.totalMinutes, 120);
+  assert.equal(result.inProgress, true);
+  assert.deepEqual(plain(second.days), [{ date: '2026-11-16', minutes: 120 }]);
+  assert.equal(filterWorkedDays(result.days, '2026-11-01', '2026-11-30').totalMinutes, result.totalMinutes);
+  assert.equal(filterWorkedDays(result.days, '2026-12-01', '2026-12-15').totalMinutes, 0);
+});
+
+test('rejects reversed or invalid periods', () => {
+  assert.throws(() => filterWorkedDays([], '2026-11-16', '2026-11-15'), /data inicial/);
+  assert.throws(() => filterWorkedDays([], '', '2026-11-15'), /data válida/);
+  assert.throws(() => filterWorkedDays([], '2026-02-30', '2026-03-01'), /data válida/);
 });

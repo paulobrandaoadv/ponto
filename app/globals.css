@@ -336,6 +336,19 @@ main {
   color: #a63232;
 }
 
+.employee-hours-filter,
+.employee-hours-note {
+  flex: 1 0 100%;
+  min-width: 0;
+}
+
+.employee-hours-filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
 .employee-overtime-days {
   flex: 1 0 100%;
   min-width: 0;
