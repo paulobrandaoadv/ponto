@@ -126,6 +126,8 @@ Após consultar um período e selecionar um único funcionário, administradores
 
 Em **Recibos e vales**, administradores ativos registram adiantamentos ou pagamentos com data, local, valor e observação opcional, e podem imprimir para assinatura. A observação é salva no histórico e exibida no documento. A emissão não comprova pagamento ou recebimento. O histórico permite filtrar por funcionário e data, e cancelamentos exigem motivo e permanecem registrados. Nome, CPF e empregador são preservados como constavam na emissão, inclusive após exclusão do funcionário; isso mantém o histórico financeiro separado das marcações apagadas. Avalie suas obrigações de retenção e privacidade.
 
+Ao selecionar **Ver** no histórico, a página navega até o recibo escolhido, inclusive quando ele está cancelado.
+
 O relatório individual lista recibos ativos pela data do recibo no período consultado. Os vales são abatidos apenas em uma simulação sobre o valor de horas calculado, não sobre o salário ou a folha completa; se superarem esse valor, são mostrados separadamente, sem saldo. Pagamentos são informativos e não são abatidos. Gerar o relatório não cria fechamento nem marca vales como descontados: uma nova consulta pode incluí-los novamente. Consulte o período de novo após emitir ou cancelar recibos.
 
 Com a migration de jornadas contínuas, gestores e administradores têm acesso a **Jornadas com Alertas**, com filtros por funcionário, período, tipo e situação. Alertas são operacionais, não bloqueiam batidas e podem ser marcados como visualizados, em análise ou resolvidos com justificativa auditada. O sistema compara intervalos com a escala cadastrada; não faz interpretação legal nem implementa banco de horas, que depende de parâmetros e regras ainda não cadastrados.

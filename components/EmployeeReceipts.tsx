@@ -26,6 +26,7 @@ export default function EmployeeReceipts({ companyId, employees }: Props) {
   const [receipts, setReceipts] = useState<EmployeeReceipt[]>([]);
   const [knownEmployees, setKnownEmployees] = useState<Array<{ id: string; name: string }>>([]);
   const [selected, setSelected] = useState<EmployeeReceipt | null>(null);
+  const [viewRequest, setViewRequest] = useState(0);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [locked, setLocked] = useState(false);
@@ -33,6 +34,13 @@ export default function EmployeeReceipts({ companyId, employees }: Props) {
   const [message, setMessage] = useState('');
   const requestId = useRef<string | null>(null);
   const inFlight = useRef(false);
+  const receiptHeadingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    if (!viewRequest) return;
+    receiptHeadingRef.current?.scrollIntoView({ block: 'start' });
+    receiptHeadingRef.current?.focus({ preventScroll: true });
+  }, [viewRequest]);
 
   const load = useCallback(async () => {
     if (from && to && from > to) throw new Error('A data inicial deve ser anterior ou igual à final.');
@@ -220,13 +228,17 @@ export default function EmployeeReceipts({ companyId, employees }: Props) {
             <td>{receiptDate(item.receipt_date)}</td><td>{item.employee_name}</td>
             <td>{item.receipt_type === 'advance' ? 'Vale' : 'Pagamento'}</td><td>{receiptMoney(item.amount_cents)}</td>
             <td>{item.cancelled_at ? `Cancelado: ${item.cancellation_reason}` : 'Ativo'}</td>
-            <td><button className="btn secondary" type="button" onClick={() => { setSelected(item); setReason(''); }}>Ver</button></td>
+            <td><button className="btn secondary" type="button" onClick={() => {
+              setSelected(item);
+              setReason('');
+              setViewRequest((current) => current + 1);
+            }}>Ver</button></td>
           </tr>)}
           {!receipts.length ? <tr><td colSpan={6} className="empty">Nenhum recibo encontrado.</td></tr> : null}</tbody>
         </table>
       </div>
       {selected ? <section className="receipt-selection">
-        <h3>Recibo selecionado</h3>
+        <h3 ref={receiptHeadingRef} tabIndex={-1}>Recibo selecionado</h3>
         {selected.cancelled_at ? <p role="alert">Cancelado: {selected.cancellation_reason}. Não pode ser impresso como recibo ativo.</p> : <>
           <button type="button" className="btn primary" disabled={busy} onClick={() => void printReceipt(selected)}>Imprimir / salvar como PDF</button>
           <div className="field"><label htmlFor="receipt-reason">Motivo do cancelamento</label>
